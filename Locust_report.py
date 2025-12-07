@@ -14,10 +14,10 @@ from datetime import datetime
 # === CONFIGURATION ===
 STATS_FILE = "report_stats.csv"
 HISTORY_FILE = "report_stats_history.csv"
-NETWORK_FILE = "network_usage.csv"
+NETWORK_FILE = "Network_usage.csv"
 PDF_FILE = "Locust_Report.pdf"
 META_FILE = "report_metadata.csv"
-TOPOLOGY_SCRIPT = "create_topology.py"
+TOPOLOGY_SCRIPT = "Create_topology.py"
 topology_file = "topology_diagram.png"
 # === HELPER FUNCTIONS ===
 
