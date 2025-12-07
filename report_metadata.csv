@@ -1,0 +1,2 @@
+start_time,end_time,duration,test_type,target_host,target_ip
+2025-12-07 16:14:34.894285,2025-12-07 16:14:54.937267,0:00:20.042982,Locust Load Test,https://google.sk,142.251.36.67
