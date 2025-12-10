@@ -53,7 +53,7 @@ def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10
     
     # Target IP below cloud
     ax.text(cloud_x, cloud_y - 0.7, target_ip, ha='center', va='top', 
-            fontsize=11, fontweight='bold', bbox=dict(boxstyle='round,pad=0.3', 
+            fontsize=16, fontweight='bold', bbox=dict(boxstyle='round,pad=0.3', 
             facecolor='white', edgecolor='black'))
     
     # Bottom boxes
@@ -68,7 +68,7 @@ def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10
                                edgecolor='black', facecolor='#ffcccc', linewidth=2)
     ax.add_patch(attack_box)
     ax.text(attack_x, box_y, 'Attack', ha='center', va='center', 
-            fontsize=12, fontweight='bold')
+            fontsize=16, fontweight='bold')
     
     # Tester box (middle)
     tester_x = 5
@@ -77,7 +77,7 @@ def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10
                                edgecolor='black', facecolor='#ffffcc', linewidth=2)
     ax.add_patch(tester_box)
     ax.text(tester_x, box_y, 'Tester', ha='center', va='center', 
-            fontsize=12, fontweight='bold')
+            fontsize=16, fontweight='bold')
     
     # Reachability box (right)
     reach_x = 8
@@ -86,22 +86,22 @@ def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10
                               edgecolor='black', facecolor='#ccffcc', linewidth=2)
     ax.add_patch(reach_box)
     ax.text(reach_x, box_y, 'Reachability', ha='center', va='center', 
-            fontsize=12, fontweight='bold')
+            fontsize=16, fontweight='bold')
     
     # Interface and IP info below boxes
     info_y = box_y - 1
     
     # Left info (Attack side)
     ax.text(attack_x, info_y, f'Interface: {interface}', ha='center', va='top', 
-            fontsize=9, fontstyle='italic')
+            fontsize=16, fontstyle='italic')
     ax.text(attack_x, info_y - 0.25, f'IP source:', ha='center', va='top', 
-            fontsize=9, fontstyle='italic')
+            fontsize=16, fontstyle='italic')
     ax.text(attack_x, info_y - 0.5, source_ip, ha='center', va='top', 
-            fontsize=9, fontweight='bold')
+            fontsize=16, fontweight='bold')
     
     # Right info (Reachability side)
     ax.text(reach_x, info_y, f'Interface: {interface}', ha='center', va='top', 
-            fontsize=9, fontstyle='italic')
+            fontsize=16, fontstyle='italic')
     
     # Arrows from boxes to cloud
     arrow_props = dict(arrowstyle='->', lw=3, color='black', 
@@ -179,6 +179,6 @@ if __name__ == "__main__":
         target_ip="142.251.36.110",
         source_ip="192.168.10.10-40",
         interface="ens33",
-        output_file="topology_diagram.png"
+        output_file="topology_diagram.pdf"
     )
     print("Topology diagram created successfully!")
