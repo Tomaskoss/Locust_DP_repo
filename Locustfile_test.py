@@ -13,7 +13,7 @@ from pathlib import Path
 #  NETWORK MONITOR
 # ============================================================
 class NetworkMonitor:
-    def __init__(self, interface="eth0", interval=1, output_file="network_usage.csv"):
+    def __init__(self, interface="ens33", interval=1, output_file="network_usage.csv"):
         self.interface = interface
         self.interval = interval
         self.output_file = output_file

@@ -141,7 +141,7 @@ def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10
 
 
 # Integration function for locust_report.py
-def add_topology_to_report(story, styles, target_ip, source_ip, interface="wlo1"):
+def add_topology_to_report(story, styles, target_ip, source_ip, interface="ens33"):
     """
     Adds the topology diagram to the PDF report story.
     
@@ -179,6 +179,6 @@ if __name__ == "__main__":
         target_ip="142.251.36.110",
         source_ip="192.168.10.10-40",
         interface="ens33",
-        output_file="topology_diagram.pdf"
+        output_file="topology_diagram.png"
     )
     print("Topology diagram created successfully!")
