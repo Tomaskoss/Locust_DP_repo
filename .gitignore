@@ -1,0 +1,13 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Generované výstupy testov
+*.csv
+*.pdf
+topology_diagram.png
+
+# OS súbory
+.DS_Store
+Thumbs.db
