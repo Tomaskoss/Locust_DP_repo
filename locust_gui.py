@@ -6,7 +6,9 @@ import os
 import time
 import csv
 import queue
+import socket
 import requests
+import pandas as pd
 from requests.adapters import HTTPAdapter
 
 ctk.set_appearance_mode("dark")
@@ -14,7 +16,7 @@ ctk.set_default_color_theme("blue")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from Create_topology import create_topology_diagram
-from Locust_report import create_pdf_report
+from Locust_report_v2 import create_pdf_report
 from Create_IP_Pool_skript import main as create_pool
 from Remove_IP_Pool_skript import main as remove_pool
 
@@ -24,13 +26,18 @@ class LocustGUI(ctk.CTk):
         super().__init__()
 
         self.title("Locust Test GUI")
-        self.geometry("900x1000")
-        self.minsize(800, 800)
+        self.geometry("900x800")
+        self.minsize(800, 600)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(4, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         self.locust_process = None
-        self.log_queue = queue.Queue()
+        self.log_queue      = queue.Queue()
+
+        # ── SCROLLABLE WRAPPER ────────────────────────────────────
+        self.scroll = ctk.CTkScrollableFrame(self, corner_radius=0)
+        self.scroll.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        self.scroll.grid_columnconfigure(0, weight=1)
 
         self._build_header()
         self._build_config()
@@ -46,7 +53,7 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _build_header(self):
-        header = ctk.CTkFrame(self, corner_radius=12, fg_color="#1a1a2e")
+        header = ctk.CTkFrame(self.scroll, corner_radius=12, fg_color="#1a1a2e")
         header.grid(row=0, column=0, padx=15, pady=(15, 5), sticky="ew")
         header.grid_columnconfigure(0, weight=1)
 
@@ -65,7 +72,7 @@ class LocustGUI(ctk.CTk):
         ).grid(row=1, column=0, padx=20, pady=(0, 12), sticky="w")
 
     def _build_config(self):
-        frame = ctk.CTkFrame(self, corner_radius=12)
+        frame = ctk.CTkFrame(self.scroll, corner_radius=12)
         frame.grid(row=1, column=0, padx=15, pady=5, sticky="ew")
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_columnconfigure(3, weight=1)
@@ -75,21 +82,22 @@ class LocustGUI(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, columnspan=4, padx=15, pady=(12, 8), sticky="w")
 
-        # Dve stĺpce polí
         fields_left = [
-            ("🌐  Target host",      "target",       "https://google.sk"),
-            ("📡  Interface",        "interface",    "ens33"),
-            ("👥  Users",            "users",        "1"),
-            ("⚡  Spawn rate",       "spawn_rate",   "1"),
+            ("🌐  Target host",  "target",     "https://google.sk"),
+            ("📡  Interface",    "interface",  "ens33"),
+            ("👥  Users",        "users",      "1"),
+            ("⚡  Spawn rate",   "spawn_rate", "1"),
+            ("🏷  Test type",    "test_type",  "Load Test"),
         ]
         fields_right = [
-            ("🔢  IP range start",   "ip_start",     "192.168.10.10"),
-            ("🔢  IP range end",     "ip_end",       "192.168.10.40"),
-            ("⏱  Run time (s)",      "run_time",     "20"),
-            ("🔄  Processes",        "processes",    "-1"),
+            ("🔢  IP range start", "ip_start",  "192.168.10.10"),
+            ("🔢  IP range end",   "ip_end",    "192.168.10.40"),
+            ("⏱  Run time (s)",   "run_time",  "20"),
+            ("🔄  Processes",      "processes", "-1"),
         ]
 
         self.entries = {}
+
         for i, (label, key, default) in enumerate(fields_left):
             ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
                          anchor="w").grid(row=i+1, column=0, padx=(15, 5), pady=4, sticky="w")
@@ -106,17 +114,52 @@ class LocustGUI(ctk.CTk):
             e.grid(row=i+1, column=3, padx=(0, 15), pady=4, sticky="ew")
             self.entries[key] = e
 
-        # Reachability interval – celá šírka
-        ctk.CTkLabel(frame, text="🔁  Reachability interval (s)",
-                     font=ctk.CTkFont(size=12), anchor="w"
-                     ).grid(row=6, column=0, padx=(15, 5), pady=(4, 14), sticky="w")
-        e = ctk.CTkEntry(frame, width=200, placeholder_text="5")
-        e.insert(0, "5")
-        e.grid(row=6, column=1, padx=(0, 20), pady=(4, 14), sticky="ew")
-        self.entries["reach_interval"] = e
+        # ── REACHABILITY SEPARÁTOR ────────────────────────────────
+        ctk.CTkLabel(
+            frame,
+            text="── Reachability ─────────────────────────────────",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+            anchor="w"
+        ).grid(row=6, column=0, columnspan=4, padx=15, pady=(10, 2), sticky="w")
+
+        reach_fields_left = [
+            ("🔁  Interval (s)",    "reach_interval",  "5"),
+            ("⏳  Timeout (s)",     "reach_timeout",   "5"),
+        ]
+        reach_fields_right = [
+            ("🖧  Zdrojová IP",      "reach_src_ip",    ""),
+            ("🔌  Interface",        "reach_interface", ""),
+            ("📉  Failure prah (%)", "reach_threshold", "50"),
+        ]
+
+        for i, (label, key, default) in enumerate(reach_fields_left):
+            ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=i+7, column=0, padx=(15, 5), pady=4, sticky="w")
+            e = ctk.CTkEntry(frame, width=200, placeholder_text=default)
+            e.insert(0, default)
+            e.grid(row=i+7, column=1, padx=(0, 20), pady=4, sticky="ew")
+            self.entries[key] = e
+
+        for i, (label, key, default) in enumerate(reach_fields_right):
+            ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=i+7, column=2, padx=(10, 5), pady=4, sticky="w")
+            if key == "reach_src_ip":
+                ph = "= IP range start"
+            elif key == "reach_interface":
+                ph = "= hlavný interface"
+            else:
+                ph = default
+            e = ctk.CTkEntry(frame, width=200, placeholder_text=ph)
+            if default:
+                e.insert(0, default)
+            e.grid(row=i+7, column=3, padx=(0, 15), pady=4, sticky="ew")
+            self.entries[key] = e
+
+        ctk.CTkLabel(frame, text="").grid(row=10, column=0, pady=(0, 4))
 
     def _build_buttons(self):
-        frame = ctk.CTkFrame(self, corner_radius=12)
+        frame = ctk.CTkFrame(self.scroll, corner_radius=12)
         frame.grid(row=2, column=0, padx=15, pady=5, sticky="ew")
         frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
@@ -126,10 +169,10 @@ class LocustGUI(ctk.CTk):
         ).grid(row=0, column=0, columnspan=4, padx=15, pady=(12, 8), sticky="w")
 
         btn_cfg = [
-            ("1.  Setup\nIP Pool + Topology", self.setup_env,   "#2471A3", "white"),
-            ("2.  Spustiť\nLocust + Reachability", self.run_test, "#1E8449", "white"),
-            ("3.  Generovať\nPDF Report",     self.generate_report, "#7D3C98", "white"),
-            ("4.  Cleanup\nRemove IP Pool",   self.cleanup,     "#922B21", "white"),
+            ("1.  Setup\nIP Pool + Topology",       self.setup_env,       "#2471A3", "white"),
+            ("2.  Spustiť\nLocust + Reachability",  self.run_test,        "#1E8449", "white"),
+            ("3.  Generovať\nPDF Report",            self.generate_report, "#7D3C98", "white"),
+            ("4.  Cleanup\nRemove IP Pool",          self.cleanup,         "#922B21", "white"),
         ]
 
         self.btn_refs = {}
@@ -143,7 +186,6 @@ class LocustGUI(ctk.CTk):
             btn.grid(row=1, column=i, padx=8, pady=(0, 14), sticky="ew")
             self.btn_refs[i] = btn
 
-        # Stop tlačidlo
         self.stop_btn = ctk.CTkButton(
             frame, text="⛔  Stop Locust",
             command=self.stop_locust,
@@ -152,10 +194,11 @@ class LocustGUI(ctk.CTk):
             corner_radius=8, height=30,
             state="disabled"
         )
-        self.stop_btn.grid(row=2, column=0, columnspan=4, padx=8, pady=(0, 10), sticky="e")
+        self.stop_btn.grid(row=2, column=0, columnspan=4,
+                           padx=8, pady=(0, 10), sticky="e")
 
     def _build_comment(self):
-        frame = ctk.CTkFrame(self, corner_radius=12)
+        frame = ctk.CTkFrame(self.scroll, corner_radius=12)
         frame.grid(row=3, column=0, padx=15, pady=5, sticky="ew")
         frame.grid_columnconfigure(0, weight=1)
 
@@ -172,10 +215,9 @@ class LocustGUI(ctk.CTk):
         self.comment_text.insert("0.0", "Sem napíš komentár k testu...")
 
     def _build_log(self):
-        frame = ctk.CTkFrame(self, corner_radius=12)
-        frame.grid(row=4, column=0, padx=15, pady=5, sticky="nsew")
+        frame = ctk.CTkFrame(self.scroll, corner_radius=12)
+        frame.grid(row=4, column=0, padx=15, pady=5, sticky="ew")
         frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(1, weight=1)
 
         header_row = ctk.CTkFrame(frame, fg_color="transparent")
         header_row.grid(row=0, column=0, padx=15, pady=(12, 4), sticky="ew")
@@ -196,15 +238,16 @@ class LocustGUI(ctk.CTk):
 
         self.log = ctk.CTkTextbox(
             frame, corner_radius=8,
+            height=300,
             font=ctk.CTkFont(size=11, family="Courier New"),
             fg_color="#0d1117", text_color="#c9d1d9",
             state="disabled"
         )
-        self.log.grid(row=1, column=0, padx=15, pady=(0, 12), sticky="nsew")
+        self.log.grid(row=1, column=0, padx=15, pady=(0, 12), sticky="ew")
 
     def _build_statusbar(self):
         self.status_bar = ctk.CTkLabel(
-            self, text="● Ready",
+            self.scroll, text="● Ready",
             font=ctk.CTkFont(size=11),
             text_color="gray",
             anchor="w",
@@ -212,16 +255,15 @@ class LocustGUI(ctk.CTk):
             corner_radius=0,
             height=28
         )
-        self.status_bar.grid(row=5, column=0, padx=0, pady=0, sticky="ew")
+        self.status_bar.grid(row=5, column=0, padx=0, pady=(0, 5), sticky="ew")
 
     # ================================================================
     # HELPERS
     # ================================================================
 
     def _darken(self, hex_color):
-        """Stmavne hex farbu o ~20% pre hover efekt"""
         hex_color = hex_color.lstrip("#")
-        r, g, b = tuple(max(0, int(hex_color[i:i+2], 16) - 40) for i in (0, 2, 4))
+        r, g, b   = tuple(max(0, int(hex_color[i:i+2], 16) - 40) for i in (0, 2, 4))
         return f"#{r:02x}{g:02x}{b:02x}"
 
     def write_log(self, msg):
@@ -267,6 +309,76 @@ class LocustGUI(ctk.CTk):
     def _get_source_range(self):
         return f"{self.get('ip_start')}-{self.get('ip_end').split('.')[-1]}"
 
+    def _save_test_config(self, script_dir):
+        config_file  = os.path.join(script_dir, "test_config.csv")
+        target_clean = self._get_target_clean()
+        try:
+            resolved_ip = socket.gethostbyname(target_clean)
+        except Exception:
+            resolved_ip = target_clean
+
+        src_ip      = self.get("reach_src_ip")    or self.get("ip_start")
+        reach_iface = self.get("reach_interface") or self.get("interface")
+
+        with open(config_file, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                "target", "target_clean", "target_ip",
+                "ip_start", "ip_end", "source_range",
+                "interface", "users", "run_time",
+                "reach_timeout", "reach_src_ip",
+                "reach_interface", "reach_threshold",
+                "test_type",                            # ← pridané
+            ])
+            writer.writeheader()
+            writer.writerow({
+                "target":          self.get("target"),
+                "target_clean":    target_clean,
+                "target_ip":       resolved_ip,
+                "ip_start":        self.get("ip_start"),
+                "ip_end":          self.get("ip_end"),
+                "source_range":    self._get_source_range(),
+                "interface":       self.get("interface"),
+                "users":           self.get("users"),
+                "run_time":        self.get("run_time"),
+                "reach_timeout":   self.get("reach_timeout")   or "5",
+                "reach_src_ip":    src_ip,
+                "reach_interface": reach_iface,
+                "reach_threshold": self.get("reach_threshold") or "50",
+                "test_type":       self.get("test_type"),       # ← pridané
+            })
+        self.write_log(f"✓ Test config uložený → {target_clean} ({resolved_ip})")
+
+    def _load_test_config(self, script_dir):
+        config_file = os.path.join(script_dir, "test_config.csv")
+        if os.path.exists(config_file):
+            try:
+                cfg             = pd.read_csv(config_file).iloc[0]
+                target_clean    = str(cfg.get("target_clean",    self._get_target_clean()))
+                target_ip       = str(cfg.get("target_ip",       target_clean))
+                source_range    = str(cfg.get("source_range",    self._get_source_range()))
+                interface       = str(cfg.get("interface",       self.get("interface")))
+                reach_threshold = float(cfg.get("reach_threshold", 50))
+                test_type_cfg   = str(cfg.get("test_type",       self.get("test_type")))  # ← opravený preklep
+                self.write_log(
+                    f"✓ Parametre testu: {target_clean} ({target_ip}) | "
+                    f"{source_range} | {interface} | prah={reach_threshold}%"
+                )
+                return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg
+            except Exception as e:
+                self.write_log(f"⚠ Chyba čítania test_config.csv: {e}")
+        else:
+            self.write_log("⚠ test_config.csv nenájdený – použité aktuálne hodnoty GUI")
+
+        # ← fallback vracia 6 hodnôt (opravené)
+        return (
+            self._get_target_clean(),
+            self._get_target_clean(),
+            self._get_source_range(),
+            self.get("interface"),
+            float(self.get("reach_threshold") or 50),
+            self.get("test_type"),                      # ← pridané
+        )
+
     # ================================================================
     # KROK 1 – SETUP
     # ================================================================
@@ -280,12 +392,13 @@ class LocustGUI(ctk.CTk):
             self.write_log("=" * 60)
             self.write_log("▶ SETUP – Pridávam IP adresy na interface...")
             create_pool(
-                ip_start=self.get("ip_start"),
-                ip_end=self.get("ip_end"),
-                interface=self.get("interface"),
-                output_file=os.path.join(script_dir, "ip_pool.txt")
+                ip_start    = self.get("ip_start"),
+                ip_end      = self.get("ip_end"),
+                interface   = self.get("interface"),
+                output_file = os.path.join(script_dir, "ip_pool.txt")
             )
             self.write_log("✓ IP pool vytvorený")
+
             self.write_log("▶ Generujem topology diagram...")
             create_topology_diagram(
                 target_ip   = self._get_target_clean(),
@@ -296,6 +409,7 @@ class LocustGUI(ctk.CTk):
             self.write_log("✓ Topology diagram vygenerovaný")
             self.write_log("✓ SETUP HOTOVÝ")
             self.write_log("=" * 60)
+
         except Exception as e:
             self.write_log(f"✗ Setup error: {e}")
 
@@ -311,14 +425,17 @@ class LocustGUI(ctk.CTk):
     def _run_test_thread(self):
         try:
             run_time   = int(self.get("run_time"))
-            interval   = int(self.get("reach_interval"))
+            interval   = int(self.get("reach_interval") or 5)
             script_dir = os.path.dirname(os.path.abspath(__file__))
+
+            self._save_test_config(script_dir)
 
             self.write_log("=" * 60)
             self.write_log("▶ Spúšťam Reachability monitoring (paralelne)...")
             reach_thread = threading.Thread(
                 target=self._run_reachability,
-                args=(run_time, interval), daemon=True
+                args=(run_time, interval),
+                daemon=True
             )
             reach_thread.start()
 
@@ -358,7 +475,9 @@ class LocustGUI(ctk.CTk):
             if self.locust_process.returncode == 0:
                 self.write_log("✓ Locust test úspešne dokončený")
             else:
-                self.write_log(f"✗ Locust skončil s chybou (kód {self.locust_process.returncode})")
+                self.write_log(
+                    f"✗ Locust skončil s chybou (kód {self.locust_process.returncode})"
+                )
             self.write_log("=" * 60)
 
         except Exception as e:
@@ -375,29 +494,69 @@ class LocustGUI(ctk.CTk):
         self.stop_btn.configure(state="disabled")
 
     def _run_reachability(self, duration, interval):
+
         class SourceIPAdapter(HTTPAdapter):
-            def __init__(self, source_ip, **kwargs):
-                self.source_ip = source_ip
+            def __init__(self, source_ip, bind_interface=None, **kwargs):
+                self.source_ip      = source_ip
+                self.bind_interface = bind_interface
                 super().__init__(**kwargs)
+
             def init_poolmanager(self, *args, **kwargs):
                 kwargs["source_address"] = (self.source_ip, 0)
-                return super().init_poolmanager(*args, **kwargs)
+                super().init_poolmanager(*args, **kwargs)
 
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+            def send(self, request, **kwargs):
+                if self.bind_interface:
+                    import socket as _sock
+                    old_create = _sock.create_connection
+                    iface      = self.bind_interface.encode()
+
+                    def patched_create(address, timeout=None, source_address=None):
+                        sock = old_create(address, timeout=timeout,
+                                          source_address=(self.source_ip, 0))
+                        try:
+                            sock.setsockopt(_sock.SOL_SOCKET, 25, iface + b'\x00')
+                        except Exception:
+                            pass
+                        return sock
+
+                    _sock.create_connection = patched_create
+                    result = super().send(request, **kwargs)
+                    _sock.create_connection = old_create
+                    return result
+                return super().send(request, **kwargs)
+
+        script_dir  = os.path.dirname(os.path.abspath(__file__))
+        timeout_val = float(self.get("reach_timeout")    or 5)
+        src_ip      = self.get("reach_src_ip")           or self.get("ip_start")
+        threshold   = float(self.get("reach_threshold")  or 50) / 100
+        reach_iface = self.get("reach_interface")        or self.get("interface")
+
+        self.write_log(
+            f"[Reachability] src={src_ip} | iface={reach_iface} | "
+            f"interval={interval}s | timeout={timeout_val}s | "
+            f"failure_prah={int(threshold*100)}%"
+        )
+
         session = requests.Session()
-        session.mount("http://",  SourceIPAdapter(self.get("ip_start")))
-        session.mount("https://", SourceIPAdapter(self.get("ip_start")))
+        adapter = SourceIPAdapter(src_ip, bind_interface=reach_iface)
+        session.mount("http://",  adapter)
+        session.mount("https://", adapter)
 
-        with open(os.path.join(script_dir, "reachability.csv"), "w", newline="") as f:
+        reach_file = os.path.join(script_dir, "reachability.csv")
+        with open(reach_file, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["timestamp", "status_code", "elapsed_time_s"])
             start = time.time()
             while time.time() - start < duration:
                 ts = time.strftime("%Y-%m-%d %H:%M:%S")
                 try:
-                    r = session.get(self.get("target"), timeout=5)
+                    r = session.get(self.get("target"), timeout=timeout_val)
                     writer.writerow([ts, r.status_code, r.elapsed.total_seconds()])
-                    self.write_log(f"[Reachability] {ts} → {r.status_code} ({r.elapsed.total_seconds():.3f}s)")
+                    self.write_log(
+                        f"[Reachability] {ts} → {r.status_code} "
+                        f"({r.elapsed.total_seconds():.3f}s)"
+                    )
                 except Exception as ex:
                     writer.writerow([ts, "FAIL", -1])
                     self.write_log(f"[Reachability] {ts} → FAIL ({ex})")
@@ -416,19 +575,25 @@ class LocustGUI(ctk.CTk):
     def _generate_report_thread(self):
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
+
+            target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg = \
+                self._load_test_config(script_dir)
+
             self.write_log("=" * 60)
             self.write_log("▶ Generujem PDF report...")
 
             create_pdf_report(
-                stats_file   = os.path.join(script_dir, "report_stats.csv"),
-                history_file = os.path.join(script_dir, "report_stats_history.csv"),
-                output_file  = os.path.join(script_dir, "Locust_Report.pdf"),
-                meta_file    = os.path.join(script_dir, "report_metadata.csv"),
-                network_file = os.path.join(script_dir, "network_usage.csv"),
-                comment      = self.get_comment(),
-                target_ip    = self._get_target_clean(),
-                source_ip    = self._get_source_range(),
-                interface    = self.get("interface"),
+                stats_file      = os.path.join(script_dir, "report_stats.csv"),
+                history_file    = os.path.join(script_dir, "report_stats_history.csv"),
+                output_file     = os.path.join(script_dir, "Locust_Report.pdf"),
+                meta_file       = os.path.join(script_dir, "report_metadata.csv"),
+                network_file    = os.path.join(script_dir, "network_usage.csv"),
+                comment         = self.get_comment(),
+                target_ip       = target_ip,
+                source_ip       = source_range,
+                interface       = interface,
+                reach_threshold = reach_threshold / 100,
+                test_type       = test_type_cfg,
             )
 
             self.write_log("✓ Locust_Report.pdf vygenerovaný")
@@ -458,13 +623,14 @@ class LocustGUI(ctk.CTk):
             self.write_log("=" * 60)
             self.write_log("▶ Odstraňujem IP pool z interface...")
             remove_pool(
-                ip_start=self.get("ip_start"),
-                ip_end=self.get("ip_end"),
-                interface=self.get("interface"),
-                pool_file=os.path.join(script_dir, "ip_pool.txt")
+                ip_start  = self.get("ip_start"),
+                ip_end    = self.get("ip_end"),
+                interface = self.get("interface"),
+                pool_file = os.path.join(script_dir, "ip_pool.txt")
             )
             self.write_log("✓ Cleanup hotový")
             self.write_log("=" * 60)
+
         except Exception as e:
             self.write_log(f"✗ Cleanup error: {e}")
 

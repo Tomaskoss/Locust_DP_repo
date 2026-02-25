@@ -1,0 +1,2 @@
+target,target_clean,target_ip,ip_start,ip_end,source_range,interface,users,run_time,reach_timeout,reach_src_ip,reach_interface,reach_threshold,test_type
+https://google.sk,google.sk,142.251.209.3,192.168.10.10,192.168.10.40,192.168.10.10-40,ens33,1,6,5,192.168.10.10,ens33,50,Load Test
