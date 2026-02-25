@@ -7,7 +7,7 @@ __pycache__/
 *.csv
 *.pdf
 topology_diagram.png
-
+ip_pool.txt
 # OS súbory
 .DS_Store
 Thumbs.db
