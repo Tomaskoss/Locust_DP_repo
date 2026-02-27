@@ -31,15 +31,10 @@ REPORT_DIR = os.path.join(BASE_DIR, "report")
 
 
 # ============================================================
-#  HELPER
+#  HELPERS
 # ============================================================
 
 def parse_ports(port_str):
-    """
-    "1024-65535"     → list(range(1024, 65536))
-    "1025,1620,3550" → [1025, 1620, 3550]
-    ""  or  None     → None
-    """
     if not port_str or not port_str.strip():
         return None
     port_str = port_str.strip()
@@ -50,12 +45,37 @@ def parse_ports(port_str):
         return [int(p.strip()) for p in port_str.split(",")]
 
 
+def is_ipv6(ip):
+    try:
+        socket.inet_pton(socket.AF_INET6, ip)
+        return True
+    except (socket.error, OSError):
+        return False
+
+
+def ipv6_range_to_list(start_str, end_str):
+    import ipaddress
+    start = int(ipaddress.IPv6Address(start_str))
+    end   = int(ipaddress.IPv6Address(end_str))
+    return [str(ipaddress.IPv6Address(i)) for i in range(start, end + 1)]
+
+
+def ipv6_prefix_to_list(prefix_str, max_count=256):
+    import ipaddress
+    net = ipaddress.IPv6Network(prefix_str, strict=False)
+    return [str(ip) for ip in list(net.hosts())[:max_count]]
+
+
+# ============================================================
+#  MAIN GUI
+# ============================================================
+
 class LocustGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
         self.title("Locust Test GUI")
-        self.geometry("900x800")
+        self.geometry("900x860")
         self.minsize(800, 600)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -100,97 +120,193 @@ class LocustGUI(ctk.CTk):
         ).grid(row=1, column=0, padx=20, pady=(0, 12), sticky="w")
 
     def _build_config(self):
-        frame = ctk.CTkFrame(self.scroll, corner_radius=12)
-        frame.grid(row=1, column=0, padx=15, pady=5, sticky="ew")
-        frame.grid_columnconfigure(1, weight=1)
-        frame.grid_columnconfigure(3, weight=1)
+        outer = ctk.CTkFrame(self.scroll, corner_radius=12)
+        outer.grid(row=1, column=0, padx=15, pady=5, sticky="ew")
+        outer.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            frame, text="⚙  Test Configuration",
+            outer, text="⚙  Test Configuration",
             font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=0, column=0, columnspan=4, padx=15, pady=(12, 8), sticky="w")
+        ).grid(row=0, column=0, padx=15, pady=(12, 6), sticky="w")
 
-        fields_left = [
+        # ── Spoločné polia ───────────────────────────────────────────
+        common_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        common_frame.grid(row=1, column=0, padx=5, pady=0, sticky="ew")
+        common_frame.grid_columnconfigure(1, weight=1)
+        common_frame.grid_columnconfigure(3, weight=1)
+
+        common_left = [
             ("🌐  Target host",  "target",     "https://google.sk"),
             ("📡  Interface",    "interface",  "ens33"),
             ("👥  Users",        "users",      "1"),
+        ]
+        common_right = [
             ("⚡  Spawn rate",   "spawn_rate", "1"),
             ("🏷  Test type",    "test_type",  "Load Test"),
-        ]
-        fields_right = [
-            ("🔢  IP range start", "ip_start",  "192.168.10.10"),
-            ("🔢  IP range end",   "ip_end",    "192.168.10.40"),
-            ("🔌  Source ports",   "src_ports", ""),
-            ("⏱  Run time (s)",   "run_time",  "20"),
-            ("🔄  Processes",      "processes", "-1"),
+            ("🔌  Source ports", "src_ports",  ""),
         ]
 
         self.entries = {}
 
-        for i, (label, key, default) in enumerate(fields_left):
-            ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
-                         anchor="w").grid(row=i+1, column=0, padx=(15, 5), pady=4, sticky="w")
-            e = ctk.CTkEntry(frame, width=200, placeholder_text=default)
+        for i, (label, key, default) in enumerate(common_left):
+            ctk.CTkLabel(common_frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=i, column=0, padx=(15, 5), pady=4, sticky="w")
+            e = ctk.CTkEntry(common_frame, width=200, placeholder_text=default)
             e.insert(0, default)
-            e.grid(row=i+1, column=1, padx=(0, 20), pady=4, sticky="ew")
+            e.grid(row=i, column=1, padx=(0, 20), pady=4, sticky="ew")
             self.entries[key] = e
 
-        for i, (label, key, default) in enumerate(fields_right):
-            ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
-                         anchor="w").grid(row=i+1, column=2, padx=(10, 5), pady=4, sticky="w")
-            if key == "src_ports":
-                ph = "e.g. 1024-65535 or 1025,1620,3550"
-            else:
-                ph = default
-            e = ctk.CTkEntry(frame, width=200, placeholder_text=ph)
+        for i, (label, key, default) in enumerate(common_right):
+            ctk.CTkLabel(common_frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=i, column=2, padx=(10, 5), pady=4, sticky="w")
+            ph = "e.g. 1024-65535 or 1025,1620,3550" if key == "src_ports" else default
+            e = ctk.CTkEntry(common_frame, width=200, placeholder_text=ph)
             if default:
                 e.insert(0, default)
-            e.grid(row=i+1, column=3, padx=(0, 15), pady=4, sticky="ew")
+            e.grid(row=i, column=3, padx=(0, 15), pady=4, sticky="ew")
             self.entries[key] = e
 
-        # ── REACHABILITY SEPARATOR ────────────────────────────────
+        # ── Run time + Processes ─────────────────────────────────────
+        rt_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        rt_frame.grid(row=2, column=0, padx=5, pady=0, sticky="ew")
+        rt_frame.grid_columnconfigure(1, weight=1)
+        rt_frame.grid_columnconfigure(3, weight=1)
+
+        for col, (label, key, default) in enumerate([
+            ("⏱  Run time (s)", "run_time",  "20"),
+            ("🔄  Processes",    "processes", "-1"),
+        ]):
+            ctk.CTkLabel(rt_frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=0, column=col*2,
+                                          padx=(15 if col == 0 else 10, 5), pady=4, sticky="w")
+            e = ctk.CTkEntry(rt_frame, width=200, placeholder_text=default)
+            e.insert(0, default)
+            e.grid(row=0, column=col*2+1,
+                   padx=(0, 20 if col == 0 else 15), pady=4, sticky="ew")
+            self.entries[key] = e
+
+        # ── IPv4 / IPv6 TAB ──────────────────────────────────────────
+        self.ip_tab = ctk.CTkTabview(outer, height=130)
+        self.ip_tab.grid(row=3, column=0, padx=15, pady=(8, 4), sticky="ew")
+        self.ip_tab.add("IPv4")
+        self.ip_tab.add("IPv6")
+
+        # --- IPv4 tab ---
+        v4 = self.ip_tab.tab("IPv4")
+        v4.grid_columnconfigure(1, weight=1)
+        v4.grid_columnconfigure(3, weight=1)
+
+        for i, (label, key, default) in enumerate([
+            ("🔢  IP range start", "ip_start", "192.168.10.10"),
+            ("🔢  IP range end",   "ip_end",   "192.168.10.40"),
+        ]):
+            ctk.CTkLabel(v4, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=0, column=i*2,
+                                          padx=(10 if i == 0 else 15, 5), pady=8, sticky="w")
+            e = ctk.CTkEntry(v4, width=200, placeholder_text=default)
+            e.insert(0, default)
+            e.grid(row=0, column=i*2+1, padx=(0, 15), pady=8, sticky="ew")
+            self.entries[key] = e
+
+        # --- IPv6 tab ---
+        v6 = self.ip_tab.tab("IPv6")
+        v6.grid_columnconfigure(1, weight=1)
+        v6.grid_columnconfigure(3, weight=1)
+
+        self.ipv6_mode = ctk.StringVar(value="range")
+
+        mode_frame = ctk.CTkFrame(v6, fg_color="transparent")
+        mode_frame.grid(row=0, column=0, columnspan=4, padx=5, pady=(6, 2), sticky="w")
+
+        ctk.CTkLabel(mode_frame, text="Mode:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(5, 8))
+        ctk.CTkRadioButton(mode_frame, text="Range",  variable=self.ipv6_mode,
+                           value="range",  command=self._on_ipv6_mode_change,
+                           font=ctk.CTkFont(size=12)).pack(side="left", padx=4)
+        ctk.CTkRadioButton(mode_frame, text="Prefix", variable=self.ipv6_mode,
+                           value="prefix", command=self._on_ipv6_mode_change,
+                           font=ctk.CTkFont(size=12)).pack(side="left", padx=4)
+
+        # Range fields
+        self.ipv6_range_frame = ctk.CTkFrame(v6, fg_color="transparent")
+        self.ipv6_range_frame.grid(row=1, column=0, columnspan=4, padx=0, pady=2, sticky="ew")
+        self.ipv6_range_frame.grid_columnconfigure(1, weight=1)
+        self.ipv6_range_frame.grid_columnconfigure(3, weight=1)
+
+        for i, (label, key, default) in enumerate([
+            ("🔢  IPv6 start", "ip6_start", "fd00::10"),
+            ("🔢  IPv6 end",   "ip6_end",   "fd00::40"),
+        ]):
+            ctk.CTkLabel(self.ipv6_range_frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=0, column=i*2,
+                                          padx=(10 if i == 0 else 15, 5), pady=6, sticky="w")
+            e = ctk.CTkEntry(self.ipv6_range_frame, width=200, placeholder_text=default)
+            e.insert(0, default)
+            e.grid(row=0, column=i*2+1, padx=(0, 15), pady=6, sticky="ew")
+            self.entries[key] = e
+
+        # Prefix field
+        self.ipv6_prefix_frame = ctk.CTkFrame(v6, fg_color="transparent")
+        self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, padx=0, pady=2, sticky="ew")
+        self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(self.ipv6_prefix_frame, text="🔢  IPv6 prefix",
+                     font=ctk.CTkFont(size=12), anchor="w").grid(
+                     row=0, column=0, padx=(10, 5), pady=6, sticky="w")
+        e = ctk.CTkEntry(self.ipv6_prefix_frame, width=300, placeholder_text="fd00::/64")
+        e.insert(0, "fd00::/64")
+        e.grid(row=0, column=1, padx=(0, 15), pady=6, sticky="ew")
+        self.entries["ip6_prefix"] = e
+
+        self.ipv6_prefix_frame.grid_remove()
+
+        # ── Reachability ─────────────────────────────────────────────
         ctk.CTkLabel(
-            frame,
+            outer,
             text="── Reachability ─────────────────────────────────",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            anchor="w"
-        ).grid(row=7, column=0, columnspan=4, padx=15, pady=(10, 2), sticky="w")
+            font=ctk.CTkFont(size=11), text_color="gray", anchor="w"
+        ).grid(row=4, column=0, padx=15, pady=(10, 2), sticky="w")
 
-        reach_fields_left = [
-            ("🔁  Interval (s)",        "reach_interval",  "5"),
-            ("⏳  Timeout (s)",         "reach_timeout",   "5"),
-        ]
-        reach_fields_right = [
-            ("🖧  Source IP",            "reach_src_ip",    ""),
-            ("🔌  Interface",            "reach_interface", ""),
-            ("📉  Failure threshold (%)", "reach_threshold", "50"),
-        ]
+        reach_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        reach_frame.grid(row=5, column=0, padx=5, pady=0, sticky="ew")
+        reach_frame.grid_columnconfigure(1, weight=1)
+        reach_frame.grid_columnconfigure(3, weight=1)
 
-        for i, (label, key, default) in enumerate(reach_fields_left):
-            ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
-                         anchor="w").grid(row=i+8, column=0, padx=(15, 5), pady=4, sticky="w")
-            e = ctk.CTkEntry(frame, width=200, placeholder_text=default)
+        for i, (label, key, default) in enumerate([
+            ("🔁  Interval (s)", "reach_interval", "5"),
+            ("⏳  Timeout (s)",  "reach_timeout",  "5"),
+        ]):
+            ctk.CTkLabel(reach_frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=i, column=0, padx=(15, 5), pady=4, sticky="w")
+            e = ctk.CTkEntry(reach_frame, width=200, placeholder_text=default)
             e.insert(0, default)
-            e.grid(row=i+8, column=1, padx=(0, 20), pady=4, sticky="ew")
+            e.grid(row=i, column=1, padx=(0, 20), pady=4, sticky="ew")
             self.entries[key] = e
 
-        for i, (label, key, default) in enumerate(reach_fields_right):
-            ctk.CTkLabel(frame, text=label, font=ctk.CTkFont(size=12),
-                         anchor="w").grid(row=i+8, column=2, padx=(10, 5), pady=4, sticky="w")
-            if key == "reach_src_ip":
-                ph = "= IP range start"
-            elif key == "reach_interface":
-                ph = "= main interface"
-            else:
-                ph = default
-            e = ctk.CTkEntry(frame, width=200, placeholder_text=ph)
+        for i, (label, key, default) in enumerate([
+            ("🖧  Source IP",             "reach_src_ip",    ""),
+            ("🔌  Interface",             "reach_interface", ""),
+            ("📉  Failure threshold (%)", "reach_threshold", "50"),
+        ]):
+            ctk.CTkLabel(reach_frame, text=label, font=ctk.CTkFont(size=12),
+                         anchor="w").grid(row=i, column=2, padx=(10, 5), pady=4, sticky="w")
+            ph = ("= IP range start" if key == "reach_src_ip"
+                  else "= main interface" if key == "reach_interface"
+                  else default)
+            e = ctk.CTkEntry(reach_frame, width=200, placeholder_text=ph)
             if default:
                 e.insert(0, default)
-            e.grid(row=i+8, column=3, padx=(0, 15), pady=4, sticky="ew")
+            e.grid(row=i, column=3, padx=(0, 15), pady=4, sticky="ew")
             self.entries[key] = e
 
-        ctk.CTkLabel(frame, text="").grid(row=11, column=0, pady=(0, 4))
+        ctk.CTkLabel(outer, text="").grid(row=6, column=0, pady=(0, 4))
+
+    def _on_ipv6_mode_change(self):
+        if self.ipv6_mode.get() == "range":
+            self.ipv6_prefix_frame.grid_remove()
+            self.ipv6_range_frame.grid()
+        else:
+            self.ipv6_range_frame.grid_remove()
+            self.ipv6_prefix_frame.grid()
 
     def _build_buttons(self):
         frame = ctk.CTkFrame(self.scroll, corner_radius=12)
@@ -203,10 +319,10 @@ class LocustGUI(ctk.CTk):
         ).grid(row=0, column=0, columnspan=4, padx=15, pady=(12, 8), sticky="w")
 
         btn_cfg = [
-            ("1.  Setup\nIP Pool + Topology",      self.setup_env,       "#2471A3", "white"),
-            ("2.  Start\nLocust + Reachability",   self.run_test,        "#1E8449", "white"),
-            ("3.  Generate\nPDF Report",            self.generate_report, "#7D3C98", "white"),
-            ("4.  Cleanup\nRemove IP Pool",         self.cleanup,         "#922B21", "white"),
+            ("1.  Setup\nIP Pool + Topology",     self.setup_env,       "#2471A3", "white"),
+            ("2.  Start\nLocust + Reachability",  self.run_test,        "#1E8449", "white"),
+            ("3.  Generate\nPDF Report",           self.generate_report, "#7D3C98", "white"),
+            ("4.  Cleanup\nRemove IP Pool",        self.cleanup,         "#922B21", "white"),
         ]
 
         self.btn_refs = {}
@@ -283,13 +399,43 @@ class LocustGUI(ctk.CTk):
         self.status_bar = ctk.CTkLabel(
             self.scroll, text="● Ready",
             font=ctk.CTkFont(size=11),
-            text_color="gray",
-            anchor="w",
-            fg_color="#1a1a2e",
-            corner_radius=0,
-            height=28
+            text_color="gray", anchor="w",
+            fg_color="#1a1a2e", corner_radius=0, height=28
         )
         self.status_bar.grid(row=5, column=0, padx=0, pady=(0, 5), sticky="ew")
+
+    # ================================================================
+    # IP VERSION HELPERS
+    # ================================================================
+
+    def _active_ip_version(self):
+        return "ipv6" if self.ip_tab.get() == "IPv6" else "ipv4"
+
+    def _get_ip_start(self):
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                import ipaddress
+                net = ipaddress.IPv6Network(self.entries["ip6_prefix"].get().strip(), strict=False)
+                return str(next(net.hosts()))
+            return self.entries["ip6_start"].get().strip()
+        return self.entries["ip_start"].get().strip()
+
+    def _get_ip_end(self):
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                import ipaddress
+                net   = ipaddress.IPv6Network(self.entries["ip6_prefix"].get().strip(), strict=False)
+                hosts = list(net.hosts())
+                return str(hosts[min(255, len(hosts)-1)])
+            return self.entries["ip6_end"].get().strip()
+        return self.entries["ip_end"].get().strip()
+
+    def _get_ip_list(self):
+        if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                return ipv6_prefix_to_list(self.entries["ip6_prefix"].get().strip())
+            return ipv6_range_to_list(self._get_ip_start(), self._get_ip_end())
+        return None
 
     # ================================================================
     # HELPERS
@@ -341,7 +487,11 @@ class LocustGUI(ctk.CTk):
         )
 
     def _get_source_range(self):
-        return f"{self.get('ip_start')}-{self.get('ip_end').split('.')[-1]}"
+        start = self._get_ip_start()
+        end   = self._get_ip_end()
+        if self._active_ip_version() == "ipv6":
+            return f"{start} - {end}"
+        return f"{start}-{end.split('.')[-1]}"
 
     def _save_port_pool(self):
         port_str  = self.get("src_ports")
@@ -362,19 +512,41 @@ class LocustGUI(ctk.CTk):
     def _save_test_config(self, script_dir):
         config_file  = os.path.join(script_dir, "test_config.csv")
         target_clean = self._get_target_clean()
-        try:
-            resolved_ip = socket.gethostbyname(target_clean)
-        except Exception:
-            resolved_ip = target_clean
+        ip_ver       = self._active_ip_version()
 
-        src_ip      = self.get("reach_src_ip")    or self.get("ip_start")
+        # Odstráň hranaté zátvorky z IPv6 URL: [fd00::11]:8080 → fd00::11
+        clean_for_resolve = target_clean
+        if clean_for_resolve.startswith("["):
+            clean_for_resolve = clean_for_resolve.split("]")[0].lstrip("[")
+        else:
+            clean_for_resolve = clean_for_resolve.split(":")[0]
+
+        try:
+            socket.inet_pton(socket.AF_INET6, clean_for_resolve)
+            resolved_ip = clean_for_resolve
+        except OSError:
+            try:
+                socket.inet_pton(socket.AF_INET, clean_for_resolve)
+                resolved_ip = clean_for_resolve
+            except OSError:
+                try:
+                    af          = socket.AF_INET6 if ip_ver == "ipv6" else socket.AF_INET
+                    infos       = socket.getaddrinfo(clean_for_resolve, None, af)
+                    resolved_ip = infos[0][4][0]
+                except Exception:
+                    try:
+                        resolved_ip = socket.gethostbyname(clean_for_resolve)
+                    except Exception:
+                        resolved_ip = clean_for_resolve
+
+        src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
 
         with open(config_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "target", "target_clean", "target_ip",
                 "ip_start", "ip_end", "source_range",
-                "src_ports",
+                "src_ports", "ip_version",
                 "interface", "users", "run_time",
                 "reach_timeout", "reach_src_ip",
                 "reach_interface", "reach_threshold",
@@ -385,10 +557,11 @@ class LocustGUI(ctk.CTk):
                 "target":          self.get("target"),
                 "target_clean":    target_clean,
                 "target_ip":       resolved_ip,
-                "ip_start":        self.get("ip_start"),
-                "ip_end":          self.get("ip_end"),
+                "ip_start":        self._get_ip_start(),
+                "ip_end":          self._get_ip_end(),
                 "source_range":    self._get_source_range(),
                 "src_ports":       self.get("src_ports"),
+                "ip_version":      ip_ver,
                 "interface":       self.get("interface"),
                 "users":           self.get("users"),
                 "run_time":        self.get("run_time"),
@@ -397,9 +570,8 @@ class LocustGUI(ctk.CTk):
                 "reach_interface": reach_iface,
                 "reach_threshold": self.get("reach_threshold") or "50",
                 "test_type":       self.get("test_type"),
-                
             })
-        self.write_log(f"✓ Test config saved → {target_clean} ({resolved_ip})")
+        self.write_log(f"✓ Test config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
 
     def _load_test_config(self, script_dir):
         config_file = os.path.join(script_dir, "test_config.csv")
@@ -419,8 +591,6 @@ class LocustGUI(ctk.CTk):
                 return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg
             except Exception as e:
                 self.write_log(f"⚠ Error reading test_config.csv: {e}")
-        else:
-            self.write_log("⚠ test_config.csv not found – using current GUI values")
 
         return (
             self._get_target_clean(),
@@ -442,13 +612,18 @@ class LocustGUI(ctk.CTk):
         try:
             self.write_log("=" * 60)
             self.write_log("▶ SETUP – Adding IP addresses to interface...")
+
+            ip_ver = self._active_ip_version()
+
             create_pool(
-                ip_start    = self.get("ip_start"),
-                ip_end      = self.get("ip_end"),
+                ip_start    = self._get_ip_start(),
+                ip_end      = self._get_ip_end(),
                 interface   = self.get("interface"),
-                output_file = os.path.join(BASE_DIR, "ip_pool.txt")
+                output_file = os.path.join(BASE_DIR, "ip_pool.txt"),
+                ip_version  = ip_ver,
+                ip_list     = self._get_ip_list(),
             )
-            self.write_log("✓ IP pool created")
+            self.write_log(f"✓ IP pool created [{ip_ver.upper()}]")
 
             self.write_log("▶ Generating topology diagram...")
             create_topology_diagram(
@@ -549,6 +724,9 @@ class LocustGUI(ctk.CTk):
 
     def _run_reachability(self, duration, interval):
 
+        src_ip = self.get("reach_src_ip") or self._get_ip_start()
+        use_v6 = is_ipv6(src_ip)
+
         class SourceIPAdapter(HTTPAdapter):
             def __init__(self, source_ip, source_port=0, **kwargs):
                 self.source_ip   = source_ip
@@ -561,24 +739,25 @@ class LocustGUI(ctk.CTk):
 
             def send(self, request, **kwargs):
                 old_create = urllib3_conn.create_connection
-                src_ip     = self.source_ip
-                src_port   = self.source_port
+                src_ip_    = self.source_ip
+                src_port_  = self.source_port
+                v6         = use_v6
 
                 def patched_create(address, timeout=None, source_address=None,
                                    socket_options=None):
                     host, port = address
-                    infos = socket.getaddrinfo(
-                        host, port,
-                        socket.AF_INET,
-                        socket.SOCK_STREAM
-                    )
+                    af    = socket.AF_INET6 if v6 else socket.AF_INET
+                    infos = socket.getaddrinfo(host, port, af, socket.SOCK_STREAM)
                     af, socktype, proto, _, sockaddr = infos[0]
-                    sock = socket.socket(af, socktype, proto)
+                    sock  = socket.socket(af, socktype, proto)
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     if socket_options:
                         for opt in socket_options:
                             sock.setsockopt(*opt)
-                    sock.bind((src_ip, src_port))
+                    if v6:
+                        sock.bind((src_ip_, src_port_, 0, 0))
+                    else:
+                        sock.bind((src_ip_, src_port_))
                     sock.settimeout(timeout)
                     sock.connect(sockaddr)
                     return sock
@@ -591,7 +770,6 @@ class LocustGUI(ctk.CTk):
                 return result
 
         timeout_val = float(self.get("reach_timeout")   or 5)
-        src_ip      = self.get("reach_src_ip")          or self.get("ip_start")
         threshold   = float(self.get("reach_threshold") or 50) / 100
         reach_iface = self.get("reach_interface")       or self.get("interface")
 
@@ -599,7 +777,8 @@ class LocustGUI(ctk.CTk):
         src_port  = random.choice(port_pool) if port_pool else 0
 
         self.write_log(
-            f"[Reachability] src={src_ip}:{src_port if src_port else 'random'} | "
+            f"[Reachability] src={src_ip}:{src_port if src_port else 'random'} "
+            f"({'IPv6' if use_v6 else 'IPv4'}) | "
             f"iface={reach_iface} | interval={interval}s | "
             f"timeout={timeout_val}s | failure_threshold={int(threshold*100)}%"
         )
@@ -660,7 +839,7 @@ class LocustGUI(ctk.CTk):
                 interface       = interface,
                 reach_threshold = reach_threshold / 100,
                 test_type       = test_type_cfg,
-                src_ports       = self.get("src_ports") or None, 
+                src_ports       = self.get("src_ports") or None,
             )
 
             self.write_log("✓ Locust_Report.pdf generated")
@@ -689,10 +868,12 @@ class LocustGUI(ctk.CTk):
             self.write_log("=" * 60)
             self.write_log("▶ Removing IP pool from interface...")
             remove_pool(
-                ip_start  = self.get("ip_start"),
-                ip_end    = self.get("ip_end"),
-                interface = self.get("interface"),
-                pool_file = os.path.join(BASE_DIR, "ip_pool.txt")
+                ip_start   = self._get_ip_start(),
+                ip_end     = self._get_ip_end(),
+                interface  = self.get("interface"),
+                pool_file  = os.path.join(BASE_DIR, "ip_pool.txt"),
+                ip_version = self._active_ip_version(),
+                ip_list    = self._get_ip_list(),
             )
             self.write_log("✓ Cleanup complete")
             self.write_log("=" * 60)

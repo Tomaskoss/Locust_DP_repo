@@ -1,114 +1,153 @@
 #!/usr/bin/env python3
-import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Circle
-
-BASE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPORT_DIR  = os.path.join(BASE_DIR, "report")
+import os
 
 
-def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10-40",
-                            interface="ens33",
-                            output_file=None):
-    if output_file is None:
-        output_file = os.path.join(REPORT_DIR, "topology_diagram.png")
+def _format_source_ip(source_ip):
+    """
+    Skráti dlhé IPv6 range pre zobrazenie v diagrame.
+    fd00::10 - fd00::40  →  fd00::10
+                             - fd00::40
+    192.168.10.10-40     →  192.168.10.10-40  (nezmenené)
+    """
+    # IPv6 range obsahuje " - " (medzery)
+    if " - " in source_ip:
+        parts = source_ip.split(" - ", 1)
+        return parts[0] + "\n- " + parts[1]
+    # IPv6 prefix fd00::/64 — ponecháme as-is
+    if ":" in source_ip and "/" in source_ip:
+        return source_ip
+    # IPv4 — nezmenené
+    return source_ip
 
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
+def _is_ipv6_source(source_ip):
+    return ":" in source_ip
+
+
+def create_topology_diagram(
+    target_ip   = "142.251.36.110",
+    source_ip   = "192.168.10.10-40",
+    interface   = "ens33",
+    output_file = "topology_diagram.png"
+):
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     ax.axis('off')
 
-    # Cloud (target) at top
+    # ── Cloud (target) ────────────────────────────────────────────
     cloud_x, cloud_y = 5, 8
 
     cloud_circles = [
-        Circle((cloud_x - 0.4, cloud_y), 0.35, color='lightblue', ec='black', linewidth=2, zorder=3),
-        Circle((cloud_x, cloud_y + 0.2), 0.4, color='lightblue', ec='black', linewidth=2, zorder=3),
-        Circle((cloud_x + 0.4, cloud_y), 0.35, color='lightblue', ec='black', linewidth=2, zorder=3),
-        Circle((cloud_x, cloud_y - 0.15), 0.3, color='lightblue', ec='black', linewidth=2, zorder=3),
+        Circle((cloud_x - 0.4, cloud_y),        0.35, color='lightblue', ec='black', linewidth=2, zorder=3),
+        Circle((cloud_x,       cloud_y + 0.2),  0.40, color='lightblue', ec='black', linewidth=2, zorder=3),
+        Circle((cloud_x + 0.4, cloud_y),        0.35, color='lightblue', ec='black', linewidth=2, zorder=3),
+        Circle((cloud_x,       cloud_y - 0.15), 0.30, color='lightblue', ec='black', linewidth=2, zorder=3),
     ]
     for circle in cloud_circles:
         ax.add_patch(circle)
 
     globe = Circle((cloud_x, cloud_y), 0.25, color='white', ec='black', linewidth=1.5, zorder=4)
     ax.add_patch(globe)
-
     ax.plot([cloud_x, cloud_x], [cloud_y - 0.25, cloud_y + 0.25], 'k-', linewidth=1, zorder=5)
-    ax.plot([cloud_x - 0.25, cloud_x + 0.25], [cloud_y, cloud_y], 'k-', linewidth=1, zorder=5)
+    ax.plot([cloud_x - 0.25, cloud_x + 0.25], [cloud_y, cloud_y],  'k-', linewidth=1, zorder=5)
 
     ellipse1 = mpatches.Ellipse((cloud_x, cloud_y), 0.5, 0.25, fill=False,
-                                edgecolor='black', linewidth=1, zorder=5)
+                                edgecolor='black', linewidth=1,   zorder=5)
     ellipse2 = mpatches.Ellipse((cloud_x, cloud_y), 0.5, 0.15, fill=False,
                                 edgecolor='black', linewidth=0.8, zorder=5)
     ax.add_patch(ellipse1)
     ax.add_patch(ellipse2)
 
-    ax.text(cloud_x, cloud_y - 0.7, target_ip, ha='center', va='top',
-            fontsize=16, fontweight='bold', bbox=dict(boxstyle='round,pad=0.3',
-            facecolor='white', edgecolor='black'))
+    # Target IP — pri IPv6 adrese menší font
+    target_fontsize = 11 if ":" in target_ip else 16
+    ax.text(cloud_x, cloud_y - 0.7, target_ip,
+            ha='center', va='top',
+            fontsize=target_fontsize, fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='black'))
 
-    # Bottom boxes
+    # ── Boxy dole ─────────────────────────────────────────────────
     box_y      = 2
     box_width  = 2.5
     box_height = 0.8
 
+    # Attack
     attack_x   = 2
-    attack_box = FancyBboxPatch((attack_x - box_width/2, box_y - box_height/2),
-                               box_width, box_height, boxstyle="round,pad=0.1",
-                               edgecolor='black', facecolor='#ffcccc', linewidth=2)
-    ax.add_patch(attack_box)
-    ax.text(attack_x, box_y, 'Attack', ha='center', va='center',
-            fontsize=16, fontweight='bold')
+    ax.add_patch(FancyBboxPatch(
+        (attack_x - box_width/2, box_y - box_height/2),
+        box_width, box_height, boxstyle="round,pad=0.1",
+        edgecolor='black', facecolor='#ffcccc', linewidth=2))
+    ax.text(attack_x, box_y, 'Attack',
+            ha='center', va='center', fontsize=16, fontweight='bold')
 
-    tester_x   = 5
-    tester_box = FancyBboxPatch((tester_x - box_width/2, box_y - box_height/2),
-                               box_width, box_height, boxstyle="round,pad=0.1",
-                               edgecolor='black', facecolor='#ffffcc', linewidth=2)
-    ax.add_patch(tester_box)
-    ax.text(tester_x, box_y, 'Tester', ha='center', va='center',
-            fontsize=16, fontweight='bold')
+    # Tester
+    tester_x = 5
+    ax.add_patch(FancyBboxPatch(
+        (tester_x - box_width/2, box_y - box_height/2),
+        box_width, box_height, boxstyle="round,pad=0.1",
+        edgecolor='black', facecolor='#ffffcc', linewidth=2))
+    ax.text(tester_x, box_y, 'Tester',
+            ha='center', va='center', fontsize=16, fontweight='bold')
 
-    reach_x   = 8
-    reach_box = FancyBboxPatch((reach_x - box_width/2, box_y - box_height/2),
-                              box_width, box_height, boxstyle="round,pad=0.1",
-                              edgecolor='black', facecolor='#ccffcc', linewidth=2)
-    ax.add_patch(reach_box)
-    ax.text(reach_x, box_y, 'Reachability', ha='center', va='center',
-            fontsize=16, fontweight='bold')
+    # Reachability
+    reach_x = 8
+    ax.add_patch(FancyBboxPatch(
+        (reach_x - box_width/2, box_y - box_height/2),
+        box_width, box_height, boxstyle="round,pad=0.1",
+        edgecolor='black', facecolor='#ccffcc', linewidth=2))
+    ax.text(reach_x, box_y, 'Reachability',
+            ha='center', va='center', fontsize=16, fontweight='bold')
 
+    # ── Info pod boxmi ────────────────────────────────────────────
     info_y = box_y - 1
 
-    ax.text(attack_x, info_y, f'Interface: {interface}', ha='center', va='top',
-            fontsize=16, fontstyle='italic')
-    ax.text(attack_x, info_y - 0.25, f'IP source:', ha='center', va='top',
-            fontsize=16, fontstyle='italic')
-    ax.text(attack_x, info_y - 0.5, source_ip, ha='center', va='top',
-            fontsize=16, fontweight='bold')
+    # IPv6 badge — oranžový štítok ak je IPv6
+    if _is_ipv6_source(source_ip):
+        for bx in (attack_x, reach_x):
+            ax.add_patch(FancyBboxPatch(
+                (bx - 0.55, info_y + 0.55), 1.1, 0.32,
+                boxstyle="round,pad=0.05",
+                edgecolor='#cc7700', facecolor='#fff0cc', linewidth=1.5, zorder=6))
+            ax.text(bx, info_y + 0.71, 'IPv6',
+                    ha='center', va='center',
+                    fontsize=10, fontweight='bold', color='#cc7700', zorder=7)
 
-    ax.text(reach_x, info_y, f'Interface: {interface}', ha='center', va='top',
-            fontsize=16, fontstyle='italic')
+    # Attack side info
+    src_label    = _format_source_ip(source_ip)
+    src_fontsize = 10 if _is_ipv6_source(source_ip) else 16
 
+    ax.text(attack_x, info_y,        f'Interface: {interface}',
+            ha='center', va='top', fontsize=16, fontstyle='italic')
+    ax.text(attack_x, info_y - 0.30, 'IP source:',
+            ha='center', va='top', fontsize=16, fontstyle='italic')
+    ax.text(attack_x, info_y - 0.60, src_label,
+            ha='center', va='top', fontsize=src_fontsize, fontweight='bold')
+
+    # Reachability side info
+    ax.text(reach_x, info_y, f'Interface: {interface}',
+            ha='center', va='top', fontsize=16, fontstyle='italic')
+
+    # ── Šípky k cloudu ────────────────────────────────────────────
     arrow_props = dict(arrowstyle='->', lw=3, color='black',
-                      connectionstyle="arc3,rad=0", mutation_scale=30)
+                       connectionstyle="arc3,rad=0", mutation_scale=30)
 
-    left_arrow = FancyArrowPatch((attack_x, box_y + box_height/2 + 0.1),
-                                (cloud_x - 0.8, cloud_y - 0.6),
-                                **arrow_props)
-    ax.add_patch(left_arrow)
+    ax.add_patch(FancyArrowPatch(
+        (attack_x, box_y + box_height/2 + 0.1),
+        (cloud_x - 0.8, cloud_y - 0.6), **arrow_props))
 
-    right_arrow = FancyArrowPatch((reach_x, box_y + box_height/2 + 0.1),
-                                 (cloud_x + 0.8, cloud_y - 0.6),
-                                 **arrow_props)
-    ax.add_patch(right_arrow)
+    ax.add_patch(FancyArrowPatch(
+        (reach_x, box_y + box_height/2 + 0.1),
+        (cloud_x + 0.8, cloud_y - 0.6), **arrow_props))
 
+    # ── Spodná linka ──────────────────────────────────────────────
     line_y = box_y - box_height/2 - 0.3
-    ax.plot([attack_x, tester_x - box_width/2], [line_y, line_y], 'k-', linewidth=2)
-    ax.plot([tester_x + box_width/2, reach_x],  [line_y, line_y], 'k-', linewidth=2)
+    ax.plot([attack_x,              tester_x - box_width/2], [line_y, line_y], 'k-', linewidth=2)
+    ax.plot([tester_x + box_width/2, reach_x],               [line_y, line_y], 'k-', linewidth=2)
     ax.plot([attack_x, attack_x], [box_y - box_height/2, line_y], 'k-', linewidth=2)
-    ax.plot([reach_x, reach_x],   [box_y - box_height/2, line_y], 'k-', linewidth=2)
+    ax.plot([reach_x,  reach_x],  [box_y - box_height/2, line_y], 'k-', linewidth=2)
 
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
@@ -118,10 +157,14 @@ def create_topology_diagram(target_ip="142.251.36.110", source_ip="192.168.10.10
     return output_file
 
 
+# ============================================================
+#  INTEGRATION — PDF report
+# ============================================================
+
 def add_topology_to_report(story, styles, target_ip, source_ip, interface="ens33"):
     from reportlab.platypus import Image, Paragraph, Spacer
 
-    topology_file = os.path.join(REPORT_DIR, "topology_diagram.png")
+    topology_file = "topology_diagram.png"
     create_topology_diagram(target_ip, source_ip, interface, topology_file)
 
     story.append(Paragraph("<b>Network Topology</b>", styles["Heading1"]))
@@ -140,11 +183,24 @@ def add_topology_to_report(story, styles, target_ip, source_ip, interface="ens33
     return topology_file
 
 
+# ============================================================
+#  STANDALONE TEST
+# ============================================================
+
 if __name__ == "__main__":
+    # IPv4 test
     create_topology_diagram(
-        target_ip="142.251.36.110",
-        source_ip="192.168.10.10-40",
-        interface="ens33"
+        target_ip   = "142.251.36.110",
+        source_ip   = "192.168.10.10-40",
+        interface   = "ens33",
+        output_file = "topology_diagram_v4.png"
     )
-    print("Topology diagram created successfully!")
+    # IPv6 test
+    create_topology_diagram(
+        target_ip   = "2a00:1450:4001:82b::2003",
+        source_ip   = "fd00::10 - fd00::40",
+        interface   = "ens33",
+        output_file = "topology_diagram_v6.png"
+    )
+    print("Both topology diagrams created successfully!")
 

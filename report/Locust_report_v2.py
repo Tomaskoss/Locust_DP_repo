@@ -352,7 +352,7 @@ def add_network_traffic_charts(network_file, history_file, story,
             except Exception as e:
                 print(f"Warning: {e}")
 
-        p4  = os.path.join(REPORT_DIR, "chart_network_total.png")
+        p4    = os.path.join(REPORT_DIR, "chart_network_total.png")
         rx_mb = network_df['rx_total'] / (1024 * 1024)
         tx_mb = network_df['tx_total'] / (1024 * 1024)
         fig, ax1 = plt.subplots(figsize=(7, 3))
@@ -496,7 +496,7 @@ def create_pdf_report(stats_file, history_file, output_file,
                       meta_file=None, network_file=None, comment=None,
                       target_ip=None, source_ip=None, interface=None,
                       reach_threshold=0.5, test_type=None,
-                      src_ports=None):    
+                      src_ports=None):
 
     if meta_file    is None: meta_file    = META_FILE
     if network_file is None: network_file = NETWORK_FILE
@@ -533,6 +533,9 @@ def create_pdf_report(stats_file, history_file, output_file,
     if used_ips in ("Unknown", "", "nan", None) and source_ip:
         used_ips = source_ip
 
+    # IP verzia podľa source_ip
+    ip_version = "IPv6" if (source_ip and ":" in source_ip) else "IPv4"
+
     topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
     generate_topology_diagram(
         target_ip   = target_ip,
@@ -564,13 +567,15 @@ def create_pdf_report(stats_file, history_file, output_file,
     story     = []
     logo_path = os.path.join(BASE_DIR, "vut_logo.png")
 
+    # ── HERO HEADER ───────────────────────────────────────────────
     story.append(HeroHeader(
         title     = "Locust Load Test Report",
-        subtitle  = f"{target_host}  •  {datetime.now().strftime('%d. %m. %Y  %H:%M')}",
+        subtitle  = f"{target_host}  •  {ip_version}  •  {datetime.now().strftime('%d. %m. %Y  %H:%M')}",
         logo_path = logo_path if os.path.exists(logo_path) else None
     ))
     story.append(Spacer(1, 14))
 
+    # ── METRIC CARDS ──────────────────────────────────────────────
     story.append(make_metric_cards([
         ("Requests",     str(req_count),     C_PRIMARY_DARK),
         ("Requests/s",   str(rps),           C_PRIMARY_DARK),
@@ -581,12 +586,14 @@ def create_pdf_report(stats_file, history_file, output_file,
     ]))
     story.append(Spacer(1, 16))
 
+    # ── TEST INFORMATION ──────────────────────────────────────────
     story.append(ColorBand("  📋   Test Information"))
     story.append(Spacer(1, 8))
     story.append(make_info_table([
         [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
         [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
         [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
+        [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
         [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
         [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
         [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
@@ -598,6 +605,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
 
+    # ── KOMENTÁR ─────────────────────────────────────────────────
     if comment and comment.strip():
         story.append(ColorBand("  💬   Komentár", bg=colors.HexColor("#5F6368")))
         story.append(Spacer(1, 8))
@@ -606,6 +614,7 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     story.append(PageBreak())
 
+    # ── PERFORMANCE OVERVIEW ──────────────────────────────────────
     story.append(ColorBand("  📊   Performance Overview"))
     story.append(Spacer(1, 8))
 
@@ -635,6 +644,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 14))
     story.append(PageBreak())
 
+    # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
         story.append(ColorBand("  🗺   Network Topology"))
         story.append(Spacer(1, 10))
@@ -648,6 +658,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(Spacer(1, 16))
         story.append(PageBreak())
 
+    # ── PIE CHART ─────────────────────────────────────────────────
     p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
     story.append(ColorBand("  🎯   Reachability"))
     story.append(Spacer(1, 10))
@@ -673,12 +684,14 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 16))
     story.append(PageBreak())
 
+    # ── TIME SERIES CHARTS ────────────────────────────────────────
     if os.path.exists(history_file):
         history_df = pd.read_csv(history_file)
         story.append(ColorBand("  📈   Time Series Charts"))
         story.append(Spacer(1, 10))
         add_time_series_charts(history_df, story)
 
+    # ── NETWORK TRAFFIC ───────────────────────────────────────────
     story.append(PageBreak())
     story.append(ColorBand("  🌐   Network Traffic Analysis",
                             bg=colors.HexColor("#1558A8")))
@@ -688,6 +701,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         failure_threshold=reach_threshold
     )
 
+    # ── BUILD ─────────────────────────────────────────────────────
     pdf.build(story, onFirstPage=_page_template, onLaterPages=_page_template)
 
     for f in ["chart_pie.png", "chart_rps_failures.png", "chart_response_times.png",

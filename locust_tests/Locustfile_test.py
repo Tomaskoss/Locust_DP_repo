@@ -23,6 +23,15 @@ NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
 #  HELPER FUNCTIONS
 # ============================================================
 
+def is_ipv6(ip):
+    """Vráti True ak je ip platná IPv6 adresa."""
+    try:
+        socket.inet_pton(socket.AF_INET6, ip)
+        return True
+    except (socket.error, OSError):
+        return False
+
+
 def parse_ports(port_str):
     if not port_str or not port_str.strip():
         return None
@@ -44,7 +53,10 @@ def load_ip_pool():
         if not ips:
             print(f"ERROR: {IP_POOL_FILE} is empty!")
             sys.exit(1)
-        print(f"✓ Loaded {len(ips)} IP addresses from {IP_POOL_FILE}")
+        v6_count = sum(1 for ip in ips if is_ipv6(ip))
+        v4_count = len(ips) - v6_count
+        print(f"✓ Loaded {len(ips)} IP addresses from {IP_POOL_FILE} "
+              f"(IPv4: {v4_count}, IPv6: {v6_count})")
         return ips
     except Exception as e:
         print(f"ERROR: Failed to load IP pool: {e}")
@@ -174,6 +186,7 @@ target_host     = None
 target_ip       = None
 network_monitor = None
 
+
 @events.init.add_listener
 def on_locust_init(environment, **kwargs):
     global network_monitor
@@ -193,12 +206,45 @@ def on_test_start(environment, **kwargs):
 
     start_time  = datetime.now()
     target_host = environment.host or "Unknown"
+
     try:
-        clean_host = target_host.replace("https://", "").replace("http://", "").split("/")[0]
-        target_ip  = socket.gethostbyname(clean_host)
+        clean_host = (
+            target_host
+            .replace("https://", "")
+            .replace("http://", "")
+            .split("/")[0]   # napr. [fd00::11]:8080
+        )
+
+        # Odstráň hranaté zátvorky a port z IPv6 URL formátu
+        # [fd00::11]:8080  →  fd00::11
+        if clean_host.startswith("["):
+            clean_host = clean_host.split("]")[0].lstrip("[")
+        else:
+            clean_host = clean_host.split(":")[0]  # IPv4 — odober port
+
+        # Ak je to priamo IP adresa, nie je čo resolvovať
+        try:
+            socket.inet_pton(socket.AF_INET6, clean_host)
+            target_ip = clean_host  # je to IPv6 adresa priamo
+            print(f"Target is IPv6 address: {target_ip}")
+        except OSError:
+            try:
+                socket.inet_pton(socket.AF_INET, clean_host)
+                target_ip = clean_host  # je to IPv4 adresa priamo
+                print(f"Target is IPv4 address: {target_ip}")
+            except OSError:
+                # Je to hostname — resolvuj
+                try:
+                    infos     = socket.getaddrinfo(clean_host, None, socket.AF_INET6)
+                    target_ip = infos[0][4][0]
+                    print(f"Resolved {clean_host} → {target_ip} (IPv6)")
+                except socket.gaierror:
+                    target_ip = socket.gethostbyname(clean_host)
+                    print(f"Resolved {clean_host} → {target_ip} (IPv4)")
+
     except Exception as e:
         print(f"Warning: Could not resolve hostname: {e}")
-        target_ip  = "Unknown"
+        target_ip = "Unknown"
 
     print(f"\n{'='*50}")
     print(f"Test started at: {start_time}")
@@ -207,6 +253,7 @@ def on_test_start(environment, **kwargs):
 
     if network_monitor:
         network_monitor.start()
+
 
 
 @events.test_stop.add_listener
@@ -240,13 +287,14 @@ def on_test_stop(environment, **kwargs):
 
 
 # ============================================================
-#  SOURCE IP + PORT ADAPTER
+#  SOURCE IP + PORT ADAPTER  (IPv4 + IPv6)
 # ============================================================
 
 class SourceIPAdapter(HTTPAdapter):
     def __init__(self, source_ip, source_port=0, **kwargs):
         self.source_ip   = source_ip
         self.source_port = source_port
+        self._use_v6     = is_ipv6(source_ip)
         super().__init__(**kwargs)
 
     def init_poolmanager(self, *args, **kwargs):
@@ -257,22 +305,24 @@ class SourceIPAdapter(HTTPAdapter):
         old_create = urllib3_conn.create_connection
         src_ip     = self.source_ip
         src_port   = self.source_port
+        use_v6     = self._use_v6  # closure — nie self (thread safety)
 
         def patched_create(address, timeout=None, source_address=None,
                            socket_options=None):
             host, port = address
-            infos = socket.getaddrinfo(
-                host, port,
-                socket.AF_INET,
-                socket.SOCK_STREAM
-            )
+            af    = socket.AF_INET6 if use_v6 else socket.AF_INET
+            infos = socket.getaddrinfo(host, port, af, socket.SOCK_STREAM)
             af, socktype, proto, _, sockaddr = infos[0]
-            sock = socket.socket(af, socktype, proto)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # ← fix
+            sock  = socket.socket(af, socktype, proto)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if socket_options:
                 for opt in socket_options:
                     sock.setsockopt(*opt)
-            sock.bind((src_ip, src_port))
+            # IPv6 bind vyžaduje 4-tuple: (ip, port, flowinfo, scope_id)
+            if use_v6:
+                sock.bind((src_ip, src_port, 0, 0))
+            else:
+                sock.bind((src_ip, src_port))
             sock.settimeout(timeout)
             sock.connect(sockaddr)
             return sock
@@ -312,14 +362,17 @@ class MyUser(HttpUser):
         return cls._port_pool
 
     def on_start(self):
-        ip_pool        = self.get_ip_pool()
-        self.source_ip = random.choice(ip_pool)
+        ip_pool          = self.get_ip_pool()
+        self.source_ip   = random.choice(ip_pool)
 
         port_pool        = self.get_port_pool()
         self.source_port = random.choice(port_pool) if port_pool else 0
 
-        print(f"User started → IP: {self.source_ip}  "
-              f"Port: {self.source_port if self.source_port else 'random (OS)'}")
+        print(
+            f"User started → IP: {self.source_ip} "
+            f"({'IPv6' if is_ipv6(self.source_ip) else 'IPv4'})  "
+            f"Port: {self.source_port if self.source_port else 'random (OS)'}"
+        )
 
         adapter = SourceIPAdapter(self.source_ip, self.source_port)
         self.client.mount("http://",  adapter)
