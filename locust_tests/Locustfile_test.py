@@ -4,19 +4,19 @@ import os
 import socket
 import csv
 import random
-from requests.adapters import HTTPAdapter
 import threading
 import time
 import sys
 from pathlib import Path
+from requests.adapters import HTTPAdapter
+import urllib3.util.connection as urllib3_conn
 
-BASE_DIR      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR      = os.path.join(BASE_DIR, "data")
-
-IP_POOL_FILE  = os.path.join(BASE_DIR, "ip_pool.txt")
-METADATA_FILE = os.path.join(DATA_DIR, "report_metadata.csv")
-NETWORK_FILE  = os.path.join(DATA_DIR, "network_usage.csv")
+BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR       = os.path.join(BASE_DIR, "data")
+IP_POOL_FILE   = os.path.join(BASE_DIR, "ip_pool.txt")
 PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
+METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
+NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
 
 
 # ============================================================
@@ -24,11 +24,6 @@ PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 # ============================================================
 
 def parse_ports(port_str):
-    """
-    "1024-65535"     → list(range(1024, 65536))
-    "1025,1620,3550" → [1025, 1620, 3550]
-    ""  alebo  None  → None  (OS vyberie port sám = 0)
-    """
     if not port_str or not port_str.strip():
         return None
     port_str = port_str.strip()
@@ -40,7 +35,6 @@ def parse_ports(port_str):
 
 
 def load_ip_pool():
-    """Load IP addresses from file with validation"""
     if not Path(IP_POOL_FILE).exists():
         print(f"ERROR: {IP_POOL_FILE} not found!")
         sys.exit(1)
@@ -58,7 +52,6 @@ def load_ip_pool():
 
 
 def load_port_pool():
-    """Load port pool from file (optional)"""
     if not Path(PORT_POOL_FILE).exists():
         return None
     try:
@@ -74,7 +67,6 @@ def load_port_pool():
 
 
 def detect_network_interface():
-    """Auto-detect primary network interface"""
     try:
         with open("/proc/net/dev", "r") as f:
             lines = f.readlines()[2:]
@@ -143,8 +135,7 @@ class NetworkMonitor:
 
                     writer.writerow([
                         int(time.time()),
-                        rx_total,
-                        tx_total,
+                        rx_total, tx_total,
                         round(rx_kbps, 3),
                         round(tx_kbps, 3)
                     ])
@@ -158,7 +149,6 @@ class NetworkMonitor:
 
     def start(self):
         if self.running:
-            print("Network monitor already running")
             return
         self.running = True
         self.thread  = threading.Thread(target=self._monitor_loop, daemon=True)
@@ -240,27 +230,59 @@ def on_test_stop(environment, **kwargs):
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(METADATA_FILE, "w", newline="") as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(["start_time", "end_time", "duration", "test_type", "target_host", "target_ip"])
-            writer.writerow([start_time, end_time, str(duration), TEST_TYPE, environment.host, target_ip])
+            writer.writerow(["start_time", "end_time", "duration",
+                             "test_type", "target_host", "target_ip"])
+            writer.writerow([start_time, end_time, str(duration),
+                             TEST_TYPE, environment.host, target_ip])
         print(f"✓ Metadata saved to {METADATA_FILE}")
     except Exception as e:
         print(f"✗ Failed to save metadata: {e}")
 
 
 # ============================================================
-#  ADAPTER FOR SOURCE IP + PORT
+#  SOURCE IP + PORT ADAPTER
 # ============================================================
 
 class SourceIPAdapter(HTTPAdapter):
-    """HTTP adapter that binds to a specific source IP and optional port"""
     def __init__(self, source_ip, source_port=0, **kwargs):
         self.source_ip   = source_ip
-        self.source_port = source_port  # 0 = OS vyberie sám
+        self.source_port = source_port
         super().__init__(**kwargs)
 
     def init_poolmanager(self, *args, **kwargs):
-        kwargs['source_address'] = (self.source_ip, self.source_port)
-        return super().init_poolmanager(*args, **kwargs)
+        kwargs["source_address"] = (self.source_ip, self.source_port)
+        super().init_poolmanager(*args, **kwargs)
+
+    def send(self, request, **kwargs):
+        old_create = urllib3_conn.create_connection
+        src_ip     = self.source_ip
+        src_port   = self.source_port
+
+        def patched_create(address, timeout=None, source_address=None,
+                           socket_options=None):
+            host, port = address
+            infos = socket.getaddrinfo(
+                host, port,
+                socket.AF_INET,
+                socket.SOCK_STREAM
+            )
+            af, socktype, proto, _, sockaddr = infos[0]
+            sock = socket.socket(af, socktype, proto)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # ← fix
+            if socket_options:
+                for opt in socket_options:
+                    sock.setsockopt(*opt)
+            sock.bind((src_ip, src_port))
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return sock
+
+        urllib3_conn.create_connection = patched_create
+        try:
+            result = super().send(request, **kwargs)
+        finally:
+            urllib3_conn.create_connection = old_create
+        return result
 
 
 # ============================================================
@@ -268,38 +290,36 @@ class SourceIPAdapter(HTTPAdapter):
 # ============================================================
 
 class MyUser(HttpUser):
-    _ip_pool      = None
-    _port_pool    = None
-    _ip_pool_lock = threading.Lock()
-    wait_time     = between(1, 2)
+    _ip_pool   = None
+    _port_pool = None
+    _pool_lock = threading.Lock()
+    wait_time  = between(1, 2)
 
     @classmethod
     def get_ip_pool(cls):
-        """Thread-safe lazy loading of IP pool"""
         if cls._ip_pool is None:
-            with cls._ip_pool_lock:
+            with cls._pool_lock:
                 if cls._ip_pool is None:
                     cls._ip_pool = load_ip_pool()
         return cls._ip_pool
 
     @classmethod
     def get_port_pool(cls):
-        """Thread-safe lazy loading of port pool"""
         if cls._port_pool is None:
-            with cls._ip_pool_lock:
+            with cls._pool_lock:
                 if cls._port_pool is None:
                     cls._port_pool = load_port_pool() or []
         return cls._port_pool
 
     def on_start(self):
-        """Called when a user starts"""
         ip_pool        = self.get_ip_pool()
         self.source_ip = random.choice(ip_pool)
 
-        port_pool         = self.get_port_pool()
-        self.source_port  = random.choice(port_pool) if port_pool else 0
+        port_pool        = self.get_port_pool()
+        self.source_port = random.choice(port_pool) if port_pool else 0
 
-        print(f"User started → IP: {self.source_ip}  Port: {self.source_port or 'random'}")
+        print(f"User started → IP: {self.source_ip}  "
+              f"Port: {self.source_port if self.source_port else 'random (OS)'}")
 
         adapter = SourceIPAdapter(self.source_ip, self.source_port)
         self.client.mount("http://",  adapter)
@@ -307,6 +327,5 @@ class MyUser(HttpUser):
 
     @task
     def index(self):
-        """Main task - request index page"""
         self.client.get("/")
 

@@ -495,7 +495,8 @@ def add_network_traffic_charts(network_file, history_file, story,
 def create_pdf_report(stats_file, history_file, output_file,
                       meta_file=None, network_file=None, comment=None,
                       target_ip=None, source_ip=None, interface=None,
-                      reach_threshold=0.5, test_type=None):
+                      reach_threshold=0.5, test_type=None,
+                      src_ports=None):    
 
     if meta_file    is None: meta_file    = META_FILE
     if network_file is None: network_file = NETWORK_FILE
@@ -590,6 +591,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
         [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
         [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
+        [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else "OS assigned (random)", S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
          Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                             S["value"])],
