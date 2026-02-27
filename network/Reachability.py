@@ -1,16 +1,20 @@
+import os
 import requests
 import time
 import csv
 from requests.adapters import HTTPAdapter
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
 # -------------------------------
 # Konfigurácia
 # -------------------------------
-SOURCE_IP = "10.10.10.20"       # tvoja alias IP
-URL = "https://www.vut.cz"      # server na testovanie
-CSV_FILE = "reachability.csv"   # výstupný súbor
-INTERVAL = 5                    # čas medzi checkmi v sekundách
-DURATION = 10                  # trvanie testu v sekundách (napr. 300 = 5 minút)
+SOURCE_IP = "10.10.10.20"                               # tvoja alias IP
+URL       = "https://www.vut.cz"                        # server na testovanie
+CSV_FILE  = os.path.join(DATA_DIR, "reachability.csv")  # výstupný súbor
+INTERVAL  = 5                                           # čas medzi checkmi v sekundách
+DURATION  = 10                                          # trvanie testu v sekundách
 
 # Adapter na konkrétnu IP
 class SourceIPAdapter(HTTPAdapter):
@@ -26,25 +30,26 @@ class SourceIPAdapter(HTTPAdapter):
 # Hlavný loop
 # -------------------------------
 session = requests.Session()
-session.mount("http://", SourceIPAdapter(SOURCE_IP))
+session.mount("http://",  SourceIPAdapter(SOURCE_IP))
 session.mount("https://", SourceIPAdapter(SOURCE_IP))
 
-# Otvorenie CSV súboru a zápis hlavičky
+os.makedirs(DATA_DIR, exist_ok=True)
+
 with open(CSV_FILE, mode="w", newline="") as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow(["timestamp", "status_code", "elapsed_time_s"])
 
-    start_time = time.time()  # začiatok testu
+    start_time = time.time()
 
     try:
         while time.time() - start_time < DURATION:
             timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             try:
-                r = session.get(URL, timeout=5)
-                status = r.status_code
+                r       = session.get(URL, timeout=5)
+                status  = r.status_code
                 elapsed = r.elapsed.total_seconds()
             except Exception as e:
-                status = "FAIL"
+                status  = "FAIL"
                 elapsed = -1
             writer.writerow([timestamp, status, elapsed])
             csvfile.flush()

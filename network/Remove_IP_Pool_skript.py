@@ -3,11 +3,13 @@ import subprocess
 import argparse
 import os
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # ---- DEFAULT KONFIGURÁCIA ----
 IP_RANGE_START = "192.168.10.10"
 IP_RANGE_END   = "192.168.10.40"
 INTERFACE      = "ens33"
-POOL_FILE      = "ip_pool.txt"
+POOL_FILE      = os.path.join(BASE_DIR, "ip_pool.txt")
 # ------------------------------
 
 def generate_ip_range(start_ip, end_ip):

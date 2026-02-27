@@ -1,12 +1,15 @@
+import os
 import ipaddress
 import subprocess
 import argparse
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ---- DEFAULT KONFIGURÁCIA ----
 IP_RANGE_START = "192.168.10.10"
 IP_RANGE_END   = "192.168.10.40"
 INTERFACE      = "ens33"
-OUTPUT_FILE    = "ip_pool.txt"
+OUTPUT_FILE    = os.path.join(BASE_DIR, "ip_pool.txt")
 # ------------------------------
 
 def generate_ip_range(start_ip, end_ip):
@@ -41,7 +44,7 @@ def main(
             f.write(ip + "\n")
 
     print("DONE.")
-    return ip_list  # vráti zoznam pre prípadné ďalšie použitie
+    return ip_list
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create IP pool on interface")

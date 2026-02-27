@@ -19,12 +19,17 @@ from reportlab.platypus.flowables import Flowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from datetime import datetime
 
+# === PATHS ===
+BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR   = os.path.join(BASE_DIR, "data")
+REPORT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # === CONFIGURATION ===
-STATS_FILE   = "report_stats.csv"
-HISTORY_FILE = "report_stats_history.csv"
-NETWORK_FILE = "network_usage.csv"
-PDF_FILE     = "Locust_Report.pdf"
-META_FILE    = "report_metadata.csv"
+STATS_FILE   = os.path.join(DATA_DIR,   "report_stats.csv")
+HISTORY_FILE = os.path.join(DATA_DIR,   "report_stats_history.csv")
+NETWORK_FILE = os.path.join(DATA_DIR,   "network_usage.csv")
+META_FILE    = os.path.join(DATA_DIR,   "report_metadata.csv")
+PDF_FILE     = os.path.join(REPORT_DIR, "Locust_Report.pdf")
 
 # === COLOUR PALETTE ===
 C_PRIMARY      = colors.HexColor("#1A73E8")
@@ -98,7 +103,6 @@ class HeroHeader(Flowable):
         self.canv.setFillColor(colors.HexColor("#BDD7FF"))
         self.canv.drawString(16, h - 54, self.subtitle)
 
-
     def wrap(self, *args):
         return self.width, self.height
 
@@ -123,8 +127,11 @@ def _page_template(canvas, doc):
 # ================================================================
 
 def generate_topology_diagram(target_ip=None, source_ip=None,
-                               interface=None, output_file="topology_diagram.png"):
+                               interface=None, output_file=None):
+    if output_file is None:
+        output_file = os.path.join(REPORT_DIR, "topology_diagram.png")
     try:
+        sys.path.insert(0, os.path.join(BASE_DIR, "network"))
         from Create_topology import create_topology_diagram
         create_topology_diagram(
             target_ip   = target_ip   or "Unknown",
@@ -170,8 +177,8 @@ def compute_duration(start_str, end_str):
         if delta.total_seconds() < 0:
             delta = (datetime.combine(datetime.today(), end_dt.time()) -
                      datetime.combine(datetime.today(), start_dt.time()))
-        total    = delta.total_seconds()
-        m, s     = divmod(total, 60)
+        total = delta.total_seconds()
+        m, s  = divmod(total, 60)
         return f"{int(m)} min {s:.1f} s" if m >= 1 else f"{s:.1f} s"
     except Exception:
         return "Unknown"
@@ -271,6 +278,7 @@ def add_time_series_charts(history_df, story):
 
     history_df['Timestamp'] = pd.to_datetime(history_df['Timestamp'], unit='s')
 
+    p1 = os.path.join(REPORT_DIR, "chart_rps_failures.png")
     fig, ax = plt.subplots(figsize=(7, 3))
     ax.fill_between(history_df['Timestamp'], history_df['Requests/s'],
                     alpha=0.15, color="#1A73E8")
@@ -281,10 +289,11 @@ def add_time_series_charts(history_df, story):
     ax.set_ylabel("Requests/s")
     ax.legend(fontsize=8, framealpha=0.8)
     _apply_chart_style(ax, "Requests per Second Over Time")
-    save_chart("chart_rps_failures.png")
-    story.append(Image("chart_rps_failures.png", width=440, height=190))
+    save_chart(p1)
+    story.append(Image(p1, width=440, height=190))
     story.append(Spacer(1, 10))
 
+    p2 = os.path.join(REPORT_DIR, "chart_response_times.png")
     fig, ax = plt.subplots(figsize=(7, 3))
     ax.fill_between(
         history_df['Timestamp'],
@@ -301,11 +310,12 @@ def add_time_series_charts(history_df, story):
     ax.set_ylabel("Response Time (s)")
     ax.legend(fontsize=8, framealpha=0.8)
     _apply_chart_style(ax, "Response Times Over Time")
-    save_chart("chart_response_times.png")
-    story.append(Image("chart_response_times.png", width=440, height=190))
+    save_chart(p2)
+    story.append(Image(p2, width=440, height=190))
     story.append(Spacer(1, 10))
 
     if 'User Count' in history_df.columns:
+        p3 = os.path.join(REPORT_DIR, "chart_users.png")
         fig, ax = plt.subplots(figsize=(7, 3))
         ax.fill_between(history_df['Timestamp'], history_df['User Count'],
                         alpha=0.15, color="#7B2FBE")
@@ -315,8 +325,8 @@ def add_time_series_charts(history_df, story):
         ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         ax.legend(fontsize=8)
         _apply_chart_style(ax, "Number of Users Over Time")
-        save_chart("chart_users.png")
-        story.append(Image("chart_users.png", width=440, height=190))
+        save_chart(p3)
+        story.append(Image(p3, width=440, height=190))
         story.append(Spacer(1, 10))
 
 
@@ -342,6 +352,7 @@ def add_network_traffic_charts(network_file, history_file, story,
             except Exception as e:
                 print(f"Warning: {e}")
 
+        p4  = os.path.join(REPORT_DIR, "chart_network_total.png")
         rx_mb = network_df['rx_total'] / (1024 * 1024)
         tx_mb = network_df['tx_total'] / (1024 * 1024)
         fig, ax1 = plt.subplots(figsize=(7, 3))
@@ -360,10 +371,11 @@ def add_network_traffic_charts(network_file, history_file, story,
         lines2, l2 = ax2.get_legend_handles_labels()
         ax1.legend(lines1 + lines2, l1 + l2, fontsize=8, loc="upper left")
         _apply_chart_style(ax1, "Total Network Traffic (Cumulative)")
-        save_chart("chart_network_total.png")
-        story.append(Image("chart_network_total.png", width=440, height=190))
+        save_chart(p4)
+        story.append(Image(p4, width=440, height=190))
         story.append(Spacer(1, 10))
 
+        p5 = os.path.join(REPORT_DIR, "chart_network_speed.png")
         fig, ax = plt.subplots(figsize=(7, 3))
         ax.fill_between(network_df['timestamp'], network_df['rx_kbps'],
                         alpha=0.12, color="#1A73E8")
@@ -378,8 +390,8 @@ def add_network_traffic_charts(network_file, history_file, story,
         ax.set_ylabel("Speed (kB/s)")
         ax.legend(fontsize=8)
         _apply_chart_style(ax, "Network Transfer Speed")
-        save_chart("chart_network_speed.png")
-        story.append(Image("chart_network_speed.png", width=440, height=190))
+        save_chart(p5)
+        story.append(Image(p5, width=440, height=190))
         story.append(Spacer(1, 12))
 
         rx_kb  = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / 1024
@@ -511,19 +523,16 @@ def create_pdf_report(stats_file, history_file, output_file,
     fails_s      = round(data_row["Failures/s"], 2)
     avg_size     = round(data_row["Average Content Size"], 2)
 
-    # načítaj metadata; test_type_meta = hodnota z CSV
     start_time, end_time, test_type_meta, target_host, target_ip_meta, used_ips = \
         load_test_times(meta_file)
 
-    # GUI parameter má prednosť pred hodnotou z metadata CSV
     display_test_type  = test_type if (test_type and test_type.strip()) else test_type_meta
-
     duration           = compute_duration(start_time, end_time)
     resolved_target_ip = target_ip or target_ip_meta
     if used_ips in ("Unknown", "", "nan", None) and source_ip:
         used_ips = source_ip
 
-    topology_output = os.path.join(os.path.dirname(output_file), "topology_diagram.png")
+    topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
     generate_topology_diagram(
         target_ip   = target_ip,
         source_ip   = source_ip,
@@ -538,8 +547,8 @@ def create_pdf_report(stats_file, history_file, output_file,
     )
 
     S = {
-        "body":    ParagraphStyle("body",    fontSize=10, textColor=C_TEXT,       leading=15),
-        "muted":   ParagraphStyle("muted",   fontSize=9,  textColor=C_TEXT_MUTED, leading=13),
+        "body":    ParagraphStyle("body",    fontSize=10, textColor=C_TEXT,        leading=15),
+        "muted":   ParagraphStyle("muted",   fontSize=9,  textColor=C_TEXT_MUTED,  leading=13),
         "label":   ParagraphStyle("label",   fontSize=10, textColor=C_PRIMARY_DARK,
                                   fontName="Helvetica-Bold"),
         "value":   ParagraphStyle("value",   fontSize=10, textColor=C_TEXT),
@@ -552,9 +561,8 @@ def create_pdf_report(stats_file, history_file, output_file,
     }
 
     story     = []
-    logo_path = os.path.join(os.path.dirname(output_file), "vut_logo.png")
+    logo_path = os.path.join(BASE_DIR, "vut_logo.png")
 
-    # ── HERO HEADER ───────────────────────────────────────────────
     story.append(HeroHeader(
         title     = "Locust Load Test Report",
         subtitle  = f"{target_host}  •  {datetime.now().strftime('%d. %m. %Y  %H:%M')}",
@@ -562,35 +570,32 @@ def create_pdf_report(stats_file, history_file, output_file,
     ))
     story.append(Spacer(1, 14))
 
-    # ── METRIC CARDS ──────────────────────────────────────────────
     story.append(make_metric_cards([
-        ("Requests",     str(req_count),     C_PRIMARY_DARK),  # Objem
-        ("Requests/s",   str(rps),           C_PRIMARY_DARK),  # Objem
-        ("Avg Response", f"{avg_resp} s",    C_PRIMARY),       # Výkon
-        ("Duration",     duration,           C_PRIMARY),       # Výkon
-        ("Failures",     str(fail_count),    C_DANGER),        # Chyby
-        ("Failure Rate", f"{failure_rate}%", C_DANGER),        # Chyby
+        ("Requests",     str(req_count),     C_PRIMARY_DARK),
+        ("Requests/s",   str(rps),           C_PRIMARY_DARK),
+        ("Avg Response", f"{avg_resp} s",    C_PRIMARY),
+        ("Duration",     duration,           C_PRIMARY),
+        ("Failures",     str(fail_count),    C_DANGER),
+        ("Failure Rate", f"{failure_rate}%", C_DANGER),
     ]))
     story.append(Spacer(1, 16))
 
-    # ── TEST INFORMATION ──────────────────────────────────────────
     story.append(ColorBand("  📋   Test Information"))
     story.append(Spacer(1, 8))
     story.append(make_info_table([
-        [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,            S["value"])],
-        [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),             S["value"])],
-        [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),      S["value"])],
-        [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),              S["value"])],
-        [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                S["value"])],
-        [Paragraph("Duration",          S["label"]), Paragraph(duration,                     S["value"])],
-        [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                S["value"])],
+        [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
+        [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
+        [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
+        [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
+        [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
+        [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
+        [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
-         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                           S["value"])],
+         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                             S["value"])],
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
 
-    # ── KOMENTÁR ─────────────────────────────────────────────────
     if comment and comment.strip():
         story.append(ColorBand("  💬   Komentár", bg=colors.HexColor("#5F6368")))
         story.append(Spacer(1, 8))
@@ -599,7 +604,6 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     story.append(PageBreak())
 
-    # ── PERFORMANCE OVERVIEW ──────────────────────────────────────
     story.append(ColorBand("  📊   Performance Overview"))
     story.append(Spacer(1, 8))
 
@@ -609,27 +613,26 @@ def create_pdf_report(stats_file, history_file, output_file,
     stable_color  = C_ACCENT if is_stable else C_DANGER
 
     story.append(make_info_table([
-        [Paragraph("Request Count",         S["label"]), Paragraph(str(req_count),       S["value"])],
-        [Paragraph("Success Count",         S["label"]), Paragraph(str(success),         S["value"])],
-        [Paragraph("Failure Count",         S["label"]), Paragraph(str(fail_count),      S["value"])],
-        [Paragraph("Failure Rate",          S["label"]), Paragraph(f"{failure_rate}%",   S["value"])],
-        [Paragraph("Failure threshold",     S["label"]), Paragraph(f"{threshold_pct}%",  S["value"])],
+        [Paragraph("Request Count",         S["label"]), Paragraph(str(req_count),      S["value"])],
+        [Paragraph("Success Count",         S["label"]), Paragraph(str(success),        S["value"])],
+        [Paragraph("Failure Count",         S["label"]), Paragraph(str(fail_count),     S["value"])],
+        [Paragraph("Failure Rate",          S["label"]), Paragraph(f"{failure_rate}%",  S["value"])],
+        [Paragraph("Failure threshold",     S["label"]), Paragraph(f"{threshold_pct}%", S["value"])],
         [Paragraph("Stable & Reachable",    S["label"]),
          Paragraph(stable_text, ParagraphStyle(
              "stable", fontSize=10, fontName="Helvetica-Bold", textColor=stable_color
          ))],
-        [Paragraph("Median Response Time",  S["label"]), Paragraph(f"{median_resp} s",   S["value"])],
-        [Paragraph("Average Response Time", S["label"]), Paragraph(f"{avg_resp} s",      S["value"])],
-        [Paragraph("Min Response Time",     S["label"]), Paragraph(f"{min_resp} s",      S["value"])],
-        [Paragraph("Max Response Time",     S["label"]), Paragraph(f"{max_resp} s",      S["value"])],
-        [Paragraph("Requests/s",            S["label"]), Paragraph(str(rps),             S["value"])],
-        [Paragraph("Failures/s",            S["label"]), Paragraph(str(fails_s),         S["value"])],
-        [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",      S["value"])],
+        [Paragraph("Median Response Time",  S["label"]), Paragraph(f"{median_resp} s",  S["value"])],
+        [Paragraph("Average Response Time", S["label"]), Paragraph(f"{avg_resp} s",     S["value"])],
+        [Paragraph("Min Response Time",     S["label"]), Paragraph(f"{min_resp} s",     S["value"])],
+        [Paragraph("Max Response Time",     S["label"]), Paragraph(f"{max_resp} s",     S["value"])],
+        [Paragraph("Requests/s",            S["label"]), Paragraph(str(rps),            S["value"])],
+        [Paragraph("Failures/s",            S["label"]), Paragraph(str(fails_s),        S["value"])],
+        [Paragraph("Avg Content Size",      S["label"]), Paragraph(f"{avg_size} B",     S["value"])],
     ], col_widths=[200, None]))
     story.append(Spacer(1, 14))
     story.append(PageBreak())
 
-    # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
         story.append(ColorBand("  🗺   Network Topology"))
         story.append(Spacer(1, 10))
@@ -643,7 +646,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(Spacer(1, 16))
         story.append(PageBreak())
 
-    # ── PIE CHART ─────────────────────────────────────────────────
+    p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
     story.append(ColorBand("  🎯   Reachability"))
     story.append(Spacer(1, 10))
     sizes  = [success, fail_count] if req_count > 0 else [1, 0]
@@ -663,19 +666,17 @@ def create_pdf_report(stats_file, history_file, output_file,
     ax.set_title("Reachable vs Unreachable", fontsize=11,
                  fontweight="bold", color="#202124")
     fig.patch.set_facecolor("white")
-    save_chart("chart_pie.png", dpi=220)
-    story.append(Image("chart_pie.png", width=400, height=320))
+    save_chart(p_pie, dpi=220)
+    story.append(Image(p_pie, width=400, height=320))
     story.append(Spacer(1, 16))
     story.append(PageBreak())
 
-    # ── TIME SERIES CHARTS ────────────────────────────────────────
     if os.path.exists(history_file):
         history_df = pd.read_csv(history_file)
         story.append(ColorBand("  📈   Time Series Charts"))
         story.append(Spacer(1, 10))
         add_time_series_charts(history_df, story)
 
-    # ── NETWORK TRAFFIC ───────────────────────────────────────────
     story.append(PageBreak())
     story.append(ColorBand("  🌐   Network Traffic Analysis",
                             bg=colors.HexColor("#1558A8")))
@@ -685,13 +686,13 @@ def create_pdf_report(stats_file, history_file, output_file,
         failure_threshold=reach_threshold
     )
 
-    # ── BUILD ─────────────────────────────────────────────────────
     pdf.build(story, onFirstPage=_page_template, onLaterPages=_page_template)
 
     for f in ["chart_pie.png", "chart_rps_failures.png", "chart_response_times.png",
               "chart_users.png", "chart_network_total.png", "chart_network_speed.png"]:
-        if os.path.exists(f):
-            os.remove(f)
+        full_path = os.path.join(REPORT_DIR, f)
+        if os.path.exists(full_path):
+            os.remove(full_path)
 
     print(f"PDF report generated: {output_file}")
 
@@ -699,3 +700,4 @@ def create_pdf_report(stats_file, history_file, output_file,
 # === MAIN ===
 if __name__ == "__main__":
     create_pdf_report(STATS_FILE, HISTORY_FILE, PDF_FILE)
+
