@@ -638,9 +638,9 @@ def create_pdf_report(stats_file, history_file, output_file,
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
 
-    # ── KOMENTÁR ─────────────────────────────────────────────────
+    # ── Comment ─────────────────────────────────────────────────
     if comment and comment.strip():
-        story.append(ColorBand("  Komentar", bg=colors.HexColor("#5F6368")))
+        story.append(ColorBand("  Comment", bg=colors.HexColor("#5F6368")))
         story.append(Spacer(1, 8))
         story.append(Paragraph(comment.replace("\n", "<br/>"), S["comment"]))
         story.append(Spacer(1, 14))
