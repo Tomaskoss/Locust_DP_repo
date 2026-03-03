@@ -475,7 +475,7 @@ def add_network_traffic_charts(network_file, history_file, story,
             ("RIGHTPADDING", (0, 0), (-1, -1), 3),
             ("VALIGN",       (0, 0), (-1, -1), "TOP"),
         ]))
-        story.append(ColorBand("  📊   Network Traffic Statistics",
+        story.append(ColorBand("  Network Traffic Statistics",
                                bg=colors.HexColor("#1558A8"), height=24, font_size=11))
         story.append(Spacer(1, 8))
         story.append(grid)
@@ -489,6 +489,39 @@ def add_network_traffic_charts(network_file, history_file, story,
 
 
 # ================================================================
+# ================================================================
+
+def sign_report(input_path, output_path,
+                p12_path="cert.p12", p12_pass=b"yourpassword"):
+    """Digitálne podpíše PDF report pomocou .p12 certifikátu (pyHanko)."""
+    try:
+        from pyhanko.sign import signers
+        from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    except ImportError:
+        print("⚠ pyhanko nie je nainštalovaný. Signing preskočený.")
+        return
+
+    if not os.path.exists(p12_path):
+        print(f"⚠ Certifikát '{p12_path}' neexistuje. Signing preskočený.")
+        return
+
+    signer = signers.SimpleSigner.load_pkcs12(
+        pfx_file   = p12_path,
+        passphrase = p12_pass
+    )
+    with open(input_path, "rb") as inf:
+        w = IncrementalPdfFileWriter(inf)
+        with open(output_path, "wb") as out:
+            signers.sign_pdf(
+                w,
+                signers.PdfSignatureMetadata(field_name="Signature1"),
+                signer = signer,
+                output = out
+            )
+    print(f"✓ Signed PDF: {output_path}")
+
+
+# ================================================================
 # PDF GENERATION
 # ================================================================
 
@@ -496,7 +529,8 @@ def create_pdf_report(stats_file, history_file, output_file,
                       meta_file=None, network_file=None, comment=None,
                       target_ip=None, source_ip=None, interface=None,
                       reach_threshold=0.5, test_type=None,
-                      src_ports=None):
+                      src_ports=None,
+                      sign=False, p12_path=None, p12_pass=b"yourpassword"):
 
     if meta_file    is None: meta_file    = META_FILE
     if network_file is None: network_file = NETWORK_FILE
@@ -533,7 +567,6 @@ def create_pdf_report(stats_file, history_file, output_file,
     if used_ips in ("Unknown", "", "nan", None) and source_ip:
         used_ips = source_ip
 
-    # IP verzia podľa source_ip
     ip_version = "IPv6" if (source_ip and ":" in source_ip) else "IPv4"
 
     topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
@@ -587,7 +620,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 16))
 
     # ── TEST INFORMATION ──────────────────────────────────────────
-    story.append(ColorBand("  📋   Test Information"))
+    story.append(ColorBand("  Test Information"))
     story.append(Spacer(1, 8))
     story.append(make_info_table([
         [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
@@ -601,13 +634,13 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else "OS assigned (random)", S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
-         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                             S["value"])],
+         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
 
     # ── KOMENTÁR ─────────────────────────────────────────────────
     if comment and comment.strip():
-        story.append(ColorBand("  💬   Komentár", bg=colors.HexColor("#5F6368")))
+        story.append(ColorBand("  Komentar", bg=colors.HexColor("#5F6368")))
         story.append(Spacer(1, 8))
         story.append(Paragraph(comment.replace("\n", "<br/>"), S["comment"]))
         story.append(Spacer(1, 14))
@@ -615,12 +648,12 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(PageBreak())
 
     # ── PERFORMANCE OVERVIEW ──────────────────────────────────────
-    story.append(ColorBand("  📊   Performance Overview"))
+    story.append(ColorBand("  Performance Overview"))
     story.append(Spacer(1, 8))
 
     threshold_pct = round(reach_threshold * 100, 1)
     is_stable     = failure_rate <= threshold_pct
-    stable_text   = "✓  Stable and reachable" if is_stable else "✗  Unstable / unreachable"
+    stable_text   = "Stable and reachable" if is_stable else "Unstable / unreachable"
     stable_color  = C_ACCENT if is_stable else C_DANGER
 
     story.append(make_info_table([
@@ -646,7 +679,7 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
-        story.append(ColorBand("  🗺   Network Topology"))
+        story.append(ColorBand("  Network Topology"))
         story.append(Spacer(1, 10))
         story.append(Image(topology_output, width=490, height=430))
         story.append(Spacer(1, 6))
@@ -660,7 +693,7 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     # ── PIE CHART ─────────────────────────────────────────────────
     p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
-    story.append(ColorBand("  🎯   Reachability"))
+    story.append(ColorBand("  Reachability"))
     story.append(Spacer(1, 10))
     sizes  = [success, fail_count] if req_count > 0 else [1, 0]
     labels = ["Reachable", "Unreachable"]
@@ -687,13 +720,13 @@ def create_pdf_report(stats_file, history_file, output_file,
     # ── TIME SERIES CHARTS ────────────────────────────────────────
     if os.path.exists(history_file):
         history_df = pd.read_csv(history_file)
-        story.append(ColorBand("  📈   Time Series Charts"))
+        story.append(ColorBand("  Time Series Charts"))
         story.append(Spacer(1, 10))
         add_time_series_charts(history_df, story)
 
     # ── NETWORK TRAFFIC ───────────────────────────────────────────
     story.append(PageBreak())
-    story.append(ColorBand("  🌐   Network Traffic Analysis",
+    story.append(ColorBand("  Network Traffic Analysis",
                             bg=colors.HexColor("#1558A8")))
     story.append(Spacer(1, 10))
     add_network_traffic_charts(
@@ -710,10 +743,27 @@ def create_pdf_report(stats_file, history_file, output_file,
         if os.path.exists(full_path):
             os.remove(full_path)
 
-    print(f"PDF report generated: {output_file}")
+    print(f"✓ PDF report generated: {output_file}")
+
+    if sign:
+        signed_output = output_file.replace(".pdf", "_signed.pdf")
+        resolved_p12 = (
+            p12_path if (p12_path and os.path.isabs(p12_path))
+            else os.path.join(REPORT_DIR, p12_path or "cert.p12")
+        )
+        try:
+            sign_report(output_file, signed_output, resolved_p12, p12_pass)
+            if os.path.exists(signed_output):
+                os.replace(signed_output, output_file)
+                print(f"✓ Signed PDF replaced original: {output_file}")
+        except Exception as e:
+            print(f"⚠ Signing failed: {e}")
 
 
 # === MAIN ===
 if __name__ == "__main__":
-    create_pdf_report(STATS_FILE, HISTORY_FILE, PDF_FILE)
-
+    create_pdf_report(
+        stats_file  = STATS_FILE,
+        history_file= HISTORY_FILE,
+        output_file = PDF_FILE,
+    )

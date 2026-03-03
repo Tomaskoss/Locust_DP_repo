@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import customtkinter as ctk
 import subprocess
 import threading
@@ -107,7 +108,7 @@ class LocustGUI(ctk.CTk):
 
         ctk.CTkLabel(
             header,
-            text="🦗  Locust Test GUI",
+            text="Locust Test GUI",
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color="#4A90D9"
         ).grid(row=0, column=0, padx=20, pady=(14, 2), sticky="w")
@@ -125,7 +126,7 @@ class LocustGUI(ctk.CTk):
         outer.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            outer, text="⚙  Test Configuration",
+            outer, text="Test Configuration",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, padx=15, pady=(12, 6), sticky="w")
 
@@ -136,14 +137,14 @@ class LocustGUI(ctk.CTk):
         common_frame.grid_columnconfigure(3, weight=1)
 
         common_left = [
-            ("🌐  Target host",  "target",     "https://google.sk"),
-            ("📡  Interface",    "interface",  "ens33"),
-            ("👥  Users",        "users",      "1"),
+            ("Target host",  "target",     "https://google.sk"),
+            ("Interface",    "interface",  "ens33"),
+            ("Users",        "users",      "1"),
         ]
         common_right = [
-            ("⚡  Spawn rate",   "spawn_rate", "1"),
-            ("🏷  Test type",    "test_type",  "Load Test"),
-            ("🔌  Source ports", "src_ports",  ""),
+            ("Spawn rate",   "spawn_rate", "1"),
+            ("Test type",    "test_type",  "Load Test"),
+            ("Source ports", "src_ports",  ""),
         ]
 
         self.entries = {}
@@ -173,8 +174,8 @@ class LocustGUI(ctk.CTk):
         rt_frame.grid_columnconfigure(3, weight=1)
 
         for col, (label, key, default) in enumerate([
-            ("⏱  Run time (s)", "run_time",  "20"),
-            ("🔄  Processes",    "processes", "-1"),
+            ("Run time (s)", "run_time",  "20"),
+            ("Processes",    "processes", "-1"),
         ]):
             ctk.CTkLabel(rt_frame, text=label, font=ctk.CTkFont(size=12),
                          anchor="w").grid(row=0, column=col*2,
@@ -191,14 +192,13 @@ class LocustGUI(ctk.CTk):
         self.ip_tab.add("IPv4")
         self.ip_tab.add("IPv6")
 
-        # --- IPv4 tab ---
         v4 = self.ip_tab.tab("IPv4")
         v4.grid_columnconfigure(1, weight=1)
         v4.grid_columnconfigure(3, weight=1)
 
         for i, (label, key, default) in enumerate([
-            ("🔢  IP range start", "ip_start", "192.168.10.10"),
-            ("🔢  IP range end",   "ip_end",   "192.168.10.40"),
+            ("IP range start", "ip_start", "192.168.10.10"),
+            ("IP range end",   "ip_end",   "192.168.10.40"),
         ]):
             ctk.CTkLabel(v4, text=label, font=ctk.CTkFont(size=12),
                          anchor="w").grid(row=0, column=i*2,
@@ -208,7 +208,6 @@ class LocustGUI(ctk.CTk):
             e.grid(row=0, column=i*2+1, padx=(0, 15), pady=8, sticky="ew")
             self.entries[key] = e
 
-        # --- IPv6 tab ---
         v6 = self.ip_tab.tab("IPv6")
         v6.grid_columnconfigure(1, weight=1)
         v6.grid_columnconfigure(3, weight=1)
@@ -226,15 +225,14 @@ class LocustGUI(ctk.CTk):
                            value="prefix", command=self._on_ipv6_mode_change,
                            font=ctk.CTkFont(size=12)).pack(side="left", padx=4)
 
-        # Range fields
         self.ipv6_range_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_range_frame.grid(row=1, column=0, columnspan=4, padx=0, pady=2, sticky="ew")
         self.ipv6_range_frame.grid_columnconfigure(1, weight=1)
         self.ipv6_range_frame.grid_columnconfigure(3, weight=1)
 
         for i, (label, key, default) in enumerate([
-            ("🔢  IPv6 start", "ip6_start", "fd00::10"),
-            ("🔢  IPv6 end",   "ip6_end",   "fd00::40"),
+            ("IPv6 start", "ip6_start", "fd00::10"),
+            ("IPv6 end",   "ip6_end",   "fd00::40"),
         ]):
             ctk.CTkLabel(self.ipv6_range_frame, text=label, font=ctk.CTkFont(size=12),
                          anchor="w").grid(row=0, column=i*2,
@@ -244,12 +242,11 @@ class LocustGUI(ctk.CTk):
             e.grid(row=0, column=i*2+1, padx=(0, 15), pady=6, sticky="ew")
             self.entries[key] = e
 
-        # Prefix field
         self.ipv6_prefix_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, padx=0, pady=2, sticky="ew")
         self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(self.ipv6_prefix_frame, text="🔢  IPv6 prefix",
+        ctk.CTkLabel(self.ipv6_prefix_frame, text="IPv6 prefix",
                      font=ctk.CTkFont(size=12), anchor="w").grid(
                      row=0, column=0, padx=(10, 5), pady=6, sticky="w")
         e = ctk.CTkEntry(self.ipv6_prefix_frame, width=300, placeholder_text="fd00::/64")
@@ -261,8 +258,7 @@ class LocustGUI(ctk.CTk):
 
         # ── Reachability ─────────────────────────────────────────────
         ctk.CTkLabel(
-            outer,
-            text="── Reachability ─────────────────────────────────",
+            outer, text="── Reachability ─────────────────────────────────",
             font=ctk.CTkFont(size=11), text_color="gray", anchor="w"
         ).grid(row=4, column=0, padx=15, pady=(10, 2), sticky="w")
 
@@ -272,8 +268,8 @@ class LocustGUI(ctk.CTk):
         reach_frame.grid_columnconfigure(3, weight=1)
 
         for i, (label, key, default) in enumerate([
-            ("🔁  Interval (s)", "reach_interval", "5"),
-            ("⏳  Timeout (s)",  "reach_timeout",  "5"),
+            ("Interval (s)", "reach_interval", "5"),
+            ("Timeout (s)",  "reach_timeout",  "5"),
         ]):
             ctk.CTkLabel(reach_frame, text=label, font=ctk.CTkFont(size=12),
                          anchor="w").grid(row=i, column=0, padx=(15, 5), pady=4, sticky="w")
@@ -283,9 +279,9 @@ class LocustGUI(ctk.CTk):
             self.entries[key] = e
 
         for i, (label, key, default) in enumerate([
-            ("🖧  Source IP",             "reach_src_ip",    ""),
-            ("🔌  Interface",             "reach_interface", ""),
-            ("📉  Failure threshold (%)", "reach_threshold", "50"),
+            ("Source IP",             "reach_src_ip",    ""),
+            ("Interface",             "reach_interface", ""),
+            ("Failure threshold (%)", "reach_threshold", "50"),
         ]):
             ctk.CTkLabel(reach_frame, text=label, font=ctk.CTkFont(size=12),
                          anchor="w").grid(row=i, column=2, padx=(10, 5), pady=4, sticky="w")
@@ -298,7 +294,21 @@ class LocustGUI(ctk.CTk):
             e.grid(row=i, column=3, padx=(0, 15), pady=4, sticky="ew")
             self.entries[key] = e
 
-        ctk.CTkLabel(outer, text="").grid(row=6, column=0, pady=(0, 4))
+        # ── Signing ───────────────────────────────────────────────────
+        ctk.CTkLabel(
+            outer, text="── PDF Signing ───────────────────────────────────",
+            font=ctk.CTkFont(size=11), text_color="gray", anchor="w"
+        ).grid(row=6, column=0, padx=15, pady=(10, 2), sticky="w")
+
+        sign_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        sign_frame.grid(row=7, column=0, padx=5, pady=(0, 8), sticky="ew")
+        sign_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(sign_frame, text="Cert password", font=ctk.CTkFont(size=12),
+                     anchor="w").grid(row=0, column=0, padx=(15, 5), pady=4, sticky="w")
+        self.cert_pass = ctk.CTkEntry(sign_frame, width=200, show="•",
+                                      placeholder_text="Heslo k cert.p12")
+        self.cert_pass.grid(row=0, column=1, padx=(0, 15), pady=4, sticky="ew")
 
     def _on_ipv6_mode_change(self):
         if self.ipv6_mode.get() == "range":
@@ -314,7 +324,7 @@ class LocustGUI(ctk.CTk):
         frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         ctk.CTkLabel(
-            frame, text="🚀  Steps",
+            frame, text="Steps",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, columnspan=4, padx=15, pady=(12, 8), sticky="w")
 
@@ -337,7 +347,7 @@ class LocustGUI(ctk.CTk):
             self.btn_refs[i] = btn
 
         self.stop_btn = ctk.CTkButton(
-            frame, text="⛔  Stop Locust",
+            frame, text="Stop Locust",
             command=self.stop_locust,
             fg_color="#641E16", hover_color="#922B21",
             font=ctk.CTkFont(size=11),
@@ -353,7 +363,7 @@ class LocustGUI(ctk.CTk):
         frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            frame, text="📝  Report Comment",
+            frame, text="Report Comment",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, padx=15, pady=(12, 4), sticky="w")
 
@@ -374,12 +384,12 @@ class LocustGUI(ctk.CTk):
         header_row.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            header_row, text="📋  Output / Log",
+            header_row, text="Output / Log",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, sticky="w")
 
         ctk.CTkButton(
-            header_row, text="🗑  Clear",
+            header_row, text="Clear",
             command=self.clear_log,
             fg_color="#4A4A4A", hover_color="#666666",
             font=ctk.CTkFont(size=11),
@@ -397,7 +407,7 @@ class LocustGUI(ctk.CTk):
 
     def _build_statusbar(self):
         self.status_bar = ctk.CTkLabel(
-            self.scroll, text="● Ready",
+            self.scroll, text="Ready",
             font=ctk.CTkFont(size=11),
             text_color="gray", anchor="w",
             fg_color="#1a1a2e", corner_radius=0, height=28
@@ -514,7 +524,6 @@ class LocustGUI(ctk.CTk):
         target_clean = self._get_target_clean()
         ip_ver       = self._active_ip_version()
 
-        # Odstráň hranaté zátvorky z IPv6 URL: [fd00::11]:8080 → fd00::11
         clean_for_resolve = target_clean
         if clean_for_resolve.startswith("["):
             clean_for_resolve = clean_for_resolve.split("]")[0].lstrip("[")
@@ -824,6 +833,9 @@ class LocustGUI(ctk.CTk):
             target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg = \
                 self._load_test_config(BASE_DIR)
 
+            p12_pass = self.cert_pass.get().strip().encode()
+            p12_path = os.path.join(REPORT_DIR, "cert.p12")
+
             self.write_log("=" * 60)
             self.write_log("▶ Generating PDF report...")
 
@@ -840,6 +852,9 @@ class LocustGUI(ctk.CTk):
                 reach_threshold = reach_threshold / 100,
                 test_type       = test_type_cfg,
                 src_ports       = self.get("src_ports") or None,
+                sign            = bool(p12_pass),
+                p12_path        = p12_path,
+                p12_pass        = p12_pass,
             )
 
             self.write_log("✓ Locust_Report.pdf generated")
@@ -889,4 +904,3 @@ class LocustGUI(ctk.CTk):
 if __name__ == "__main__":
     app = LocustGUI()
     app.mainloop()
-
