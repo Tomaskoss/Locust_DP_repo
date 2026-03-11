@@ -11,3 +11,4 @@ ip_pool.txt
 # OS súbory
 .DS_Store
 Thumbs.db
+*.env

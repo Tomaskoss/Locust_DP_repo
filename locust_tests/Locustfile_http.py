@@ -1,5 +1,6 @@
 from locust import events, HttpUser, task, between
 from datetime import datetime
+from dotenv import load_dotenv
 import os
 import socket
 import csv
@@ -17,6 +18,8 @@ IP_POOL_FILE   = os.path.join(BASE_DIR, "ip_pool.txt")
 PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
 NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
 
 # ============================================================
@@ -180,7 +183,7 @@ class NetworkMonitor:
 #  TEST METADATA & EVENTS
 # ============================================================
 
-TEST_TYPE       = "Locust Load Test"
+TEST_TYPE       = os.getenv("TEST_TYPE", "Locust Load Test")
 start_time      = None
 target_host     = None
 target_ip       = None
@@ -193,7 +196,7 @@ def on_locust_init(environment, **kwargs):
     if hasattr(environment.runner, 'worker_index'):
         print("This is a worker process - network monitoring disabled")
         return
-    interface       = detect_network_interface()
+    interface       = os.getenv("INTERFACE") or detect_network_interface()
     network_monitor = NetworkMonitor(interface=interface, interval=1)
     print(f"Network monitor initialized for interface: {interface}")
 
@@ -212,28 +215,24 @@ def on_test_start(environment, **kwargs):
             target_host
             .replace("https://", "")
             .replace("http://", "")
-            .split("/")[0]   # napr. [fd00::11]:8080
+            .split("/")[0]
         )
 
-        # Odstráň hranaté zátvorky a port z IPv6 URL formátu
-        # [fd00::11]:8080  →  fd00::11
         if clean_host.startswith("["):
             clean_host = clean_host.split("]")[0].lstrip("[")
         else:
-            clean_host = clean_host.split(":")[0]  # IPv4 — odober port
+            clean_host = clean_host.split(":")[0]
 
-        # Ak je to priamo IP adresa, nie je čo resolvovať
         try:
             socket.inet_pton(socket.AF_INET6, clean_host)
-            target_ip = clean_host  # je to IPv6 adresa priamo
+            target_ip = clean_host
             print(f"Target is IPv6 address: {target_ip}")
         except OSError:
             try:
                 socket.inet_pton(socket.AF_INET, clean_host)
-                target_ip = clean_host  # je to IPv4 adresa priamo
+                target_ip = clean_host
                 print(f"Target is IPv4 address: {target_ip}")
             except OSError:
-                # Je to hostname — resolvuj
                 try:
                     infos     = socket.getaddrinfo(clean_host, None, socket.AF_INET6)
                     target_ip = infos[0][4][0]
@@ -253,7 +252,6 @@ def on_test_start(environment, **kwargs):
 
     if network_monitor:
         network_monitor.start()
-
 
 
 @events.test_stop.add_listener
@@ -305,7 +303,7 @@ class SourceIPAdapter(HTTPAdapter):
         old_create = urllib3_conn.create_connection
         src_ip     = self.source_ip
         src_port   = self.source_port
-        use_v6     = self._use_v6  # closure — nie self (thread safety)
+        use_v6     = self._use_v6
 
         def patched_create(address, timeout=None, source_address=None,
                            socket_options=None):
@@ -318,7 +316,6 @@ class SourceIPAdapter(HTTPAdapter):
             if socket_options:
                 for opt in socket_options:
                     sock.setsockopt(*opt)
-            # IPv6 bind vyžaduje 4-tuple: (ip, port, flowinfo, scope_id)
             if use_v6:
                 sock.bind((src_ip, src_port, 0, 0))
             else:

@@ -15,13 +15,16 @@ import requests
 import pandas as pd
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
+from dotenv import load_dotenv, set_key
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "network"))
 sys.path.insert(0, os.path.join(BASE_DIR, "report"))
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
 from Create_topology        import create_topology_diagram
 from Locust_report_v3       import create_pdf_report
@@ -82,7 +85,7 @@ def ipv6_prefix_to_list(prefix_str, max_count=256):
 
 def darken(hex_color, amount=40):
     hex_color = hex_color.lstrip("#")
-    r, g, b = tuple(max(0, int(hex_color[i:i+2], 16) - amount) for i in (0, 2, 4))
+    r, g, b   = tuple(max(0, int(hex_color[i:i+2], 16) - amount) for i in (0, 2, 4))
     return f"#{r:02x}{g:02x}{b:02x}"
 
 def bind_card(widget, cmd, hover_color, normal_color):
@@ -104,7 +107,6 @@ def make_scroll_frame(parent, **kwargs):
         label_fg_color="transparent",
         **kwargs
     )
-    # Odstráni prázdny label frame, ktorý pridáva medzeru navrchu
     try:
         sf._label_frame.grid_remove()
     except Exception:
@@ -147,12 +149,12 @@ class LocustGUI(ctk.CTk):
 
         self._build_sidebar()
         self._build_main()
+        self._load_env_to_gui()
         self._build_log()
 
         self._show_page("Config")
         self._poll_log_queue()
 
-        # ── Zoom klávesové skratky ─────────────────────────────
         self.bind_all("<Control-equal>",       self._zoom_in)
         self.bind_all("<Control-plus>",        self._zoom_in)
         self.bind_all("<Control-KP_Add>",      self._zoom_in)
@@ -160,8 +162,65 @@ class LocustGUI(ctk.CTk):
         self.bind_all("<Control-KP_Subtract>", self._zoom_out)
         self.bind_all("<Control-0>",           self._zoom_reset)
 
-        # ── Scroll kolečko myški ───────────────────────────────
         self._bind_scroll()
+
+    # ================================================================
+    # ENV LOAD / SAVE
+    # ================================================================
+
+    def _load_env_to_gui(self):
+        """Načíta config.env a predvyplní GUI polia — užívateľ môže hodnoty prepísať."""
+        mapping = {
+            "target":          os.getenv("TARGET_HOST"),
+            "interface":       os.getenv("INTERFACE"),
+            "test_type":       os.getenv("TEST_TYPE"),
+            "ip_start":        os.getenv("IP_START"),
+            "ip_end":          os.getenv("IP_END"),
+            "ip6_start":       os.getenv("IP6_START"),
+            "ip6_end":         os.getenv("IP6_END"),
+            "ip6_prefix":      os.getenv("IP6_PREFIX"),
+            "users":           os.getenv("USERS"),
+            "run_time":        os.getenv("RUN_TIME"),
+            "spawn_rate":      os.getenv("SPAWN_RATE"),
+            "processes":       os.getenv("PROCESSES"),
+            "reach_interval":  os.getenv("REACH_INTERVAL"),
+            "reach_timeout":   os.getenv("REACH_TIMEOUT"),
+            "reach_src_ip":    os.getenv("REACH_SRC_IP", ""),
+            "reach_interface": os.getenv("REACH_INTERFACE", ""),
+            "reach_threshold": os.getenv("REACH_THRESHOLD"),
+        }
+        for key, value in mapping.items():
+            if value and key in self.entries:
+                self.entries[key].delete(0, "end")
+                self.entries[key].insert(0, value)
+
+    def _save_env_from_gui(self):
+        """Uloží aktuálne hodnoty z GUI polí späť do config.env."""
+        env_path = os.path.join(BASE_DIR, "config.env")
+        mapping = {
+            "TARGET_HOST":     self.get("target"),
+            "INTERFACE":       self.get("interface"),
+            "TEST_TYPE":       self.get("test_type"),
+            "IP_VERSION":      self._active_ip_version(),
+            "IP_START":        self._get_ip_start(),
+            "IP_END":          self._get_ip_end(),
+            "IP6_START":       self.entries["ip6_start"].get().strip(),
+            "IP6_END":         self.entries["ip6_end"].get().strip(),
+            "IP6_PREFIX":      self.entries["ip6_prefix"].get().strip(),
+            "IPV6_MODE":       self.ipv6_mode.get(),
+            "USERS":           self.get("users"),
+            "RUN_TIME":        self.get("run_time"),
+            "SPAWN_RATE":      self.get("spawn_rate"),
+            "PROCESSES":       self.get("processes"),
+            "REACH_INTERVAL":  self.get("reach_interval"),
+            "REACH_TIMEOUT":   self.get("reach_timeout"),
+            "REACH_SRC_IP":    self.get("reach_src_ip"),
+            "REACH_INTERFACE": self.get("reach_interface"),
+            "REACH_THRESHOLD": self.get("reach_threshold"),
+        }
+        for key, val in mapping.items():
+            set_key(env_path, key, val)
+        self.write_log("✓ Config saved to config.env")
 
     # ================================================================
     # ZOOM
@@ -202,7 +261,6 @@ class LocustGUI(ctk.CTk):
         self.bind_all("<Button-5>",   self._on_mousewheel)
 
     def _on_mousewheel(self, event):
-        # tk.Text (CTkTextbox) si scrolluje sám – neprerušuj ho
         if isinstance(event.widget, tk.Text):
             return
 
@@ -210,7 +268,6 @@ class LocustGUI(ctk.CTk):
         while widget:
             if isinstance(widget, ctk.CTkScrollableFrame):
                 top, bottom = widget._parent_canvas.yview()
-                # Scrolluj iba ak sa obsah nezmestí na obrazovku
                 if top == 0.0 and bottom == 1.0:
                     return "break"
                 if event.num == 4:
@@ -530,7 +587,6 @@ class LocustGUI(ctk.CTk):
 
         t_row = 0
 
-        # ── Comment ──────────────────────────────────────────────
         t_row = self._card_header(scroll, "Comment", t_row)
         self.comment_text = ctk.CTkTextbox(
             scroll, height=140, corner_radius=8,
@@ -541,7 +597,6 @@ class LocustGUI(ctk.CTk):
         self.comment_text.insert("0.0", "Write a comment for the report...")
         t_row += 1
 
-        # ── Output ───────────────────────────────────────────────
         t_row = self._card_header(scroll, "Output", t_row)
         card_out = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
         card_out.grid(row=t_row, column=0, padx=16, pady=(0,4), sticky="ew")
@@ -569,7 +624,6 @@ class LocustGUI(ctk.CTk):
                       command=self._browse_save_dir
                       ).grid(row=1, column=2, padx=(0,16), pady=10)
 
-        # ── PDF Signing ───────────────────────────────────────────
         t_row = self._card_header(scroll, "PDF Signing", t_row)
         card_sign = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
         card_sign.grid(row=t_row, column=0, padx=16, pady=(0,4), sticky="ew")
@@ -610,7 +664,6 @@ class LocustGUI(ctk.CTk):
                                       fg_color=darken(C_CARD))
         self.cert_pass.grid(row=1, column=1, columnspan=2, padx=(0,16), pady=(0,12), sticky="ew")
 
-        # ── Generate button (fixed bottom) ────────────────────────
         gen_card = ctk.CTkFrame(outer, fg_color=C_PURPLE, corner_radius=10, cursor="hand2")
         gen_card.grid(row=1, column=0, padx=16, pady=(12,16), sticky="ew")
         gen_card.grid_columnconfigure(1, weight=1)
@@ -947,6 +1000,7 @@ class LocustGUI(ctk.CTk):
             run_time = int(self.get("run_time"))
             interval = int(self.get("reach_interval") or 5)
             self._save_port_pool()
+            self._save_env_from_gui()
             self._save_test_config(BASE_DIR)
             self.write_log("=" * 60)
             self.write_log("▶ Starting Reachability monitoring...")
@@ -955,7 +1009,7 @@ class LocustGUI(ctk.CTk):
             reach_thread.start()
             self.write_log("▶ Starting Locust test...")
             self.write_log("-" * 60)
-            cmd = ["locust", "-f", os.path.join(BASE_DIR, "locust_tests", "Locustfile_test.py"),
+            cmd = ["locust", "-f", os.path.join(BASE_DIR, "locust_tests", "Locustfile_http.py"),
                    "--headless", "-u", self.get("users"), "-r", self.get("spawn_rate"),
                    "--run-time", f"{run_time}s", "-H", self.get("target"),
                    "--processes", self.get("processes"), "--csv", os.path.join(DATA_DIR, "report")]
@@ -1116,3 +1170,4 @@ class LocustGUI(ctk.CTk):
 if __name__ == "__main__":
     app = LocustGUI()
     app.mainloop()
+
