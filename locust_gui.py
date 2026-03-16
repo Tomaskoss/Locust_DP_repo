@@ -112,6 +112,22 @@ def make_scroll_frame(parent, **kwargs):
     except Exception:
         pass
     return sf
+    
+# ============================================================
+#  network bar
+# ============================================================
+def get_network_interfaces():
+    """Vráti zoznam dostupných sieťových rozhraní zo systému."""
+    interfaces = []
+    try:
+        with open("/proc/net/dev", "r") as f:
+            for line in f.readlines()[2:]:
+                iface = line.split(":")[0].strip()
+                if iface and iface != "lo":
+                    interfaces.append(iface)
+    except Exception:
+        pass
+    return interfaces if interfaces else ["ens33", "eth0", "wlan0"]
 
 
 # ============================================================
@@ -191,8 +207,12 @@ class LocustGUI(ctk.CTk):
         }
         for key, value in mapping.items():
             if value and key in self.entries:
-                self.entries[key].delete(0, "end")
-                self.entries[key].insert(0, value)
+                widget = self.entries[key]
+                if isinstance(widget, ctk.CTkComboBox):
+                    widget.set(value)
+                else:
+                    widget.delete(0, "end")
+                    widget.insert(0, value)
 
     def _save_env_from_gui(self):
         """Uloží aktuálne hodnoty z GUI polí späť do config.env."""
@@ -395,7 +415,9 @@ class LocustGUI(ctk.CTk):
         row = self._card_header(scroll, "General", row)
         card = self._card(scroll, row); row += 1
         self._field_row(card, 0, "Target host",  "target",     "https://google.sk")
-        self._field_row(card, 1, "Interface",    "interface",  "ens33")
+        ifaces = get_network_interfaces()
+        self._combo_row(card, 1, "Interface", "interface", ifaces,
+                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"))
         self._field_row(card, 0, "Test type",    "test_type",  "Load Test",  col=2)
         self._field_row(card, 1, "Source ports", "src_ports",  "",           col=2,
                         ph="e.g. 1024-65535")
@@ -468,7 +490,7 @@ class LocustGUI(ctk.CTk):
         self._field_row(card3, 0, "Interval (s)",         "reach_interval", "5")
         self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",  "5")
         self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "",  col=2, ph="= IP range start")
-        self._field_row(card3, 1, "Interface",             "reach_interface", "",  col=2, ph="= main interface")
+        self._combo_row(card3, 1, "Interface", "reach_interface",[""] + get_network_interfaces(), "",  col=2)
         self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50",col=0)
 
         row = self._card_header(scroll, "Actions", row)
@@ -772,6 +794,21 @@ class LocustGUI(ctk.CTk):
             e.insert(0, default)
         e.grid(row=row, column=col+1, padx=(0, 16), pady=10, sticky="ew")
         self.entries[key] = e
+        
+    def _combo_row(self, card, row, label, key, values, default, col=0):
+        ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=12),
+                     text_color=C_MUTED, anchor="w", width=self.LBL_W
+                     ).grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
+        cb = ctk.CTkComboBox(card, width=self.ENTR_W, values=values,
+                             fg_color=darken(C_CARD),
+                             button_color=C_ACTIVE,
+                             button_hover_color=C_HOVER,
+                             dropdown_fg_color=C_CARD,
+                             dropdown_hover_color=darken(C_CARD, 15),
+                             dropdown_text_color=C_TEXT)
+        cb.set(default if default in values else (values[0] if values else default))
+        cb.grid(row=row, column=col+1, padx=(0, 16), pady=10, sticky="ew")
+        self.entries[key] = cb
 
     # ================================================================
     # IP VERSION HELPERS
