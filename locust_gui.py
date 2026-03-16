@@ -34,18 +34,88 @@ from Remove_IP_Pool_skript  import main as remove_pool
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.join(BASE_DIR, "report")
 
-# ── Colours ────────────────────────────────────────────────────────
-C_SIDEBAR   = "#1a1a2e"
-C_CONTENT   = "#16213e"
-C_CARD      = "#1f2b47"
-C_ACTIVE    = "#1A73E8"
-C_HOVER     = "#1558A8"
-C_TEXT      = "#e0e0e0"
-C_MUTED     = "#7a8899"
-C_DANGER    = "#C0392B"
-C_SUCCESS   = "#1E8449"
-C_PURPLE    = "#7D3C98"
-C_BLUE      = "#2471A3"
+# ── Themes ─────────────────────────────────────────────────────────
+THEMES = {
+    "Dark Blue": {
+        "SIDEBAR":  "#1a1a2e",
+        "CONTENT":  "#16213e",
+        "CARD":     "#1f2b47",
+        "ACTIVE":   "#85b832",
+        "HOVER":    "#1558A8",
+        "TEXT":     "#e0e0e0",
+        "MUTED":    "#7a8899",
+        "LABEL":    "#c5cfe0",
+        "HEADER":   "#85b832",
+        "ENTRY":    "#263550",
+        "DANGER":   "#922b21",
+        "SUCCESS":  "#85b832",
+        "PURPLE":   "#7D3C98",
+        "BLUE":     "#2a5f3a",
+    },
+    "Dark Green": {
+        "SIDEBAR":  "#0d1f0d",
+        "CONTENT":  "#111a11",
+        "CARD":     "#1a2e1a",
+        "ACTIVE":   "#4caf50",
+        "HOVER":    "#388e3c",
+        "TEXT":     "#e0e0e0",
+        "MUTED":    "#6a8f6a",
+        "LABEL":    "#b8d4b8",
+        "HEADER":   "#4caf50",
+        "ENTRY":    "#1e351e",
+        "DANGER":   "#C0392B",
+        "SUCCESS":  "#2e7d32",
+        "PURPLE":   "#7D3C98",
+        "BLUE":     "#1565c0",
+    },
+    "Dark Red": {
+        "SIDEBAR":  "#1a0a0a",
+        "CONTENT":  "#1a1010",
+        "CARD":     "#2b1515",
+        "ACTIVE":   "#e53935",
+        "HOVER":    "#b71c1c",
+        "TEXT":     "#e0e0e0",
+        "MUTED":    "#8f6060",
+        "LABEL":    "#d4b8b8",
+        "HEADER":   "#e53935",
+        "ENTRY":    "#3a1a1a",
+        "DANGER":   "#C0392B",
+        "SUCCESS":  "#1E8449",
+        "PURPLE":   "#7D3C98",
+        "BLUE":     "#2471A3",
+    },
+    "Locust Dark": {
+    "SIDEBAR":  "#0a0a0a",
+    "CONTENT":  "#111111",
+    "CARD":     "#1a1a1a",
+    "ACTIVE":   "#2a5f3a",   
+    "HOVER":    "#1e4a2c",   
+    "TEXT":     "#ffffff",
+    "MUTED":    "#888888",
+    "LABEL":    "#cccccc",
+    "HEADER":   "#2a5f3a",   
+    "ENTRY":    "#242424",
+    "DANGER":   "#922b21",
+    "SUCCESS":  "#2a5f3a",   
+    "PURPLE":   "#7D3C98",
+    "BLUE":     "#2a5f3a",
+    },
+}
+
+def apply_theme(name):
+    global C_SIDEBAR, C_CONTENT, C_CARD, C_ACTIVE, C_HOVER
+    global C_TEXT, C_MUTED, C_LABEL, C_HEADER, C_ENTRY
+    global C_DANGER, C_SUCCESS, C_PURPLE, C_BLUE
+    t = THEMES[name]
+    C_SIDEBAR = t["SIDEBAR"]; C_CONTENT = t["CONTENT"]
+    C_CARD    = t["CARD"];    C_ACTIVE  = t["ACTIVE"]
+    C_HOVER   = t["HOVER"];   C_TEXT    = t["TEXT"]
+    C_MUTED   = t["MUTED"];   C_LABEL   = t["LABEL"]
+    C_HEADER  = t["HEADER"];  C_ENTRY   = t["ENTRY"]
+    C_DANGER  = t["DANGER"];  C_SUCCESS = t["SUCCESS"]
+    C_PURPLE  = t["PURPLE"];  C_BLUE    = t["BLUE"]
+
+apply_theme("Locust Dark")
 
 ZOOM_MIN  = 0.5
 ZOOM_MAX  = 2.0
@@ -98,7 +168,6 @@ def bind_card(widget, cmd, hover_color, normal_color):
         w.bind("<Leave>", on_leave)
 
 def make_scroll_frame(parent, **kwargs):
-    """CTkScrollableFrame bez horného label paddingu."""
     sf = ctk.CTkScrollableFrame(
         parent,
         fg_color="transparent",
@@ -112,12 +181,11 @@ def make_scroll_frame(parent, **kwargs):
     except Exception:
         pass
     return sf
-    
+
 # ============================================================
 #  network bar
 # ============================================================
 def get_network_interfaces():
-    """Vráti zoznam dostupných sieťových rozhraní zo systému."""
     interfaces = []
     try:
         with open("/proc/net/dev", "r") as f:
@@ -145,8 +213,11 @@ class LocustGUI(ctk.CTk):
     LBL_W  = 160
     ENTR_W = 220
 
-    def __init__(self):
+    def __init__(self, initial_theme="Locust Dark"):
         super().__init__()
+        apply_theme(initial_theme)
+        self._current_theme = initial_theme
+
         self.title("Locust Test GUI")
         self.geometry("1100x800")
         self.minsize(900, 600)
@@ -155,14 +226,14 @@ class LocustGUI(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.locust_process = None
-        self.log_queue      = queue.Queue()
-        self.locustfile_path = None 
-        self.entries        = {}
-        self._active_page   = None
-        self._nav_buttons   = {}
-        self._pages         = {}
-        self._zoom          = 1.0
+        self.locust_process  = None
+        self.log_queue       = queue.Queue()
+        self.locustfile_path = None
+        self.entries         = {}
+        self._active_page    = None
+        self._nav_buttons    = {}
+        self._pages          = {}
+        self._zoom           = 1.0
 
         self._build_sidebar()
         self._build_main()
@@ -182,11 +253,23 @@ class LocustGUI(ctk.CTk):
         self._bind_scroll()
 
     # ================================================================
+    # THEME
+    # ================================================================
+
+    def _change_theme(self, theme_name):
+        self.write_log(f"🎨 Theme changed to: {theme_name}")
+        self.after(200, lambda: self._restart_with_theme(theme_name))
+
+    def _restart_with_theme(self, theme_name):
+        self.destroy()
+        app = LocustGUI(initial_theme=theme_name)
+        app.mainloop()
+
+    # ================================================================
     # ENV LOAD / SAVE
     # ================================================================
 
     def _load_env_to_gui(self):
-        """Načíta config.env a predvyplní GUI polia — užívateľ môže hodnoty prepísať."""
         mapping = {
             "target":          os.getenv("TARGET_HOST"),
             "interface":       os.getenv("INTERFACE"),
@@ -216,7 +299,6 @@ class LocustGUI(ctk.CTk):
                     widget.insert(0, value)
 
     def _save_env_from_gui(self):
-        """Uloží aktuálne hodnoty z GUI polí späť do config.env."""
         env_path = os.path.join(BASE_DIR, "config.env")
         mapping = {
             "TARGET_HOST":     self.get("target"),
@@ -284,7 +366,6 @@ class LocustGUI(ctk.CTk):
     def _on_mousewheel(self, event):
         if isinstance(event.widget, tk.Text):
             return
-
         widget = event.widget
         while widget:
             if isinstance(widget, ctk.CTkScrollableFrame):
@@ -311,13 +392,13 @@ class LocustGUI(ctk.CTk):
     def _build_sidebar(self):
         sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color=C_SIDEBAR)
         sidebar.grid(row=0, column=0, sticky="nsew")
-        sidebar.grid_rowconfigure(10, weight=1)
+        sidebar.grid_rowconfigure(8, weight=1)
         sidebar.grid_propagate(False)
 
         ctk.CTkLabel(
             sidebar, text="🦗 Locust",
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="#4A90D9"
+            text_color=C_HEADER
         ).grid(row=0, column=0, padx=20, pady=(24, 4), sticky="w")
 
         ctk.CTkLabel(
@@ -346,11 +427,30 @@ class LocustGUI(ctk.CTk):
             self._nav_buttons[label] = btn
 
         ctk.CTkFrame(sidebar, height=1, fg_color="#2a3a5e"
-                     ).grid(row=10, column=0, padx=12, pady=12, sticky="ew")
+                     ).grid(row=8, column=0, padx=12, pady=12, sticky="ew")
+
+        ctk.CTkLabel(sidebar, text="THEME",
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=C_MUTED
+                     ).grid(row=9, column=0, padx=20, pady=(4, 2), sticky="w")
+
+        self._theme_combo = ctk.CTkComboBox(
+            sidebar,
+            values=list(THEMES.keys()),
+            width=170,
+            fg_color=darken(C_SIDEBAR),
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_SIDEBAR,
+            dropdown_text_color=C_TEXT,
+            command=self._change_theme
+        )
+        self._theme_combo.set(self._current_theme)
+        self._theme_combo.grid(row=10, column=0, padx=15, pady=(0, 8))
 
         ctk.CTkLabel(
             sidebar, text="v3.0  •  2026",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=10),
             text_color=C_MUTED
         ).grid(row=11, column=0, padx=20, pady=(0, 16), sticky="w")
 
@@ -440,10 +540,10 @@ class LocustGUI(ctk.CTk):
             ("IP range start", "ip_start", "192.168.10.10"),
             ("IP range end",   "ip_end",   "192.168.10.40"),
         ]):
-            ctk.CTkLabel(v4, text=lbl, font=ctk.CTkFont(size=15),
-                         text_color="#c5cfe0", anchor="w", width=self.LBL_W
+            ctk.CTkLabel(v4, text=lbl, font=ctk.CTkFont(size=12),
+                         text_color=C_LABEL, anchor="w", width=self.LBL_W
                          ).grid(row=i, column=0, padx=(16,8), pady=6, sticky="w")
-            e = ctk.CTkEntry(v4, fg_color=darken(C_CARD))
+            e = ctk.CTkEntry(v4, fg_color=C_ENTRY)
             e.insert(0, default)
             e.grid(row=i, column=1, padx=(0,16), pady=6, sticky="ew")
             self.entries[key] = e
@@ -458,8 +558,12 @@ class LocustGUI(ctk.CTk):
                      text_color=C_MUTED).pack(side="left", padx=(0,8))
         for val, txt in [("range","Range"),("prefix","Prefix")]:
             ctk.CTkRadioButton(mf, text=txt, variable=self.ipv6_mode, value=val,
-                               command=self._on_ipv6_mode_change,
-                               font=ctk.CTkFont(size=11)).pack(side="left", padx=4)
+                       command=self._on_ipv6_mode_change,
+                       font=ctk.CTkFont(size=11),
+                       fg_color=C_ACTIVE,
+                       hover_color=C_HOVER,
+                       border_color=C_MUTED
+                       ).pack(side="left", padx=4)
 
         self.ipv6_range_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_range_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
@@ -468,9 +572,9 @@ class LocustGUI(ctk.CTk):
         for i, (lbl, key, dflt) in enumerate([("IPv6 start","ip6_start","fd00::10"),
                                                ("IPv6 end","ip6_end","fd00::40")]):
             ctk.CTkLabel(self.ipv6_range_frame, text=lbl, font=ctk.CTkFont(size=11),
-                         text_color=C_MUTED, anchor="w", width=self.LBL_W
+                         text_color=C_LABEL, anchor="w", width=self.LBL_W
                          ).grid(row=i, column=0, padx=(16,8), pady=4, sticky="w")
-            e = ctk.CTkEntry(self.ipv6_range_frame, fg_color=darken(C_CARD))
+            e = ctk.CTkEntry(self.ipv6_range_frame, fg_color=C_ENTRY)
             e.insert(0, dflt)
             e.grid(row=i, column=1, padx=(0,16), pady=4, sticky="ew")
             self.entries[key] = e
@@ -479,8 +583,8 @@ class LocustGUI(ctk.CTk):
         self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self.ipv6_prefix_frame, text="IPv6 prefix", font=ctk.CTkFont(size=11),
-                     text_color=C_MUTED, anchor="w").grid(row=0, column=0, padx=(16,8), pady=4, sticky="w")
-        e = ctk.CTkEntry(self.ipv6_prefix_frame, width=self.ENTR_W, fg_color=darken(C_CARD))
+                     text_color=C_LABEL, anchor="w").grid(row=0, column=0, padx=(16,8), pady=4, sticky="w")
+        e = ctk.CTkEntry(self.ipv6_prefix_frame, width=self.ENTR_W, fg_color=C_ENTRY)
         e.insert(0, "fd00::/64")
         e.grid(row=0, column=1, padx=(0,12), pady=4, sticky="ew")
         self.entries["ip6_prefix"] = e
@@ -492,7 +596,7 @@ class LocustGUI(ctk.CTk):
         self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",  "5")
         self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "",  col=2, ph="= IP range start")
         self._combo_row(card3, 1, "Interface", "reach_interface",[""] + get_network_interfaces(), "",  col=2)
-        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50",col=0)
+        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0)
 
         row = self._card_header(scroll, "Actions", row)
         bf = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -517,7 +621,7 @@ class LocustGUI(ctk.CTk):
                          fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
                          ).grid(row=0, column=1, padx=(0,12), pady=(10,0), sticky="w")
             ctk.CTkLabel(card_btn, text=sub,
-                         font=ctk.CTkFont(size=12),
+                         font=ctk.CTkFont(size=10),
                          fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
                          ).grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
 
@@ -548,6 +652,31 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 0, "Spawn rate",   "spawn_rate", "1",  col=2)
         self._field_row(card, 1, "Processes",    "processes",  "-1", col=2)
 
+        s_row = self._card_header(scroll, "Locustfile", s_row)
+        card_lf = self._card(scroll, s_row); s_row += 1
+
+        ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=15),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
+                     ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
+
+        self._locustfile_label = ctk.CTkLabel(
+            card_lf, text="default: Locustfile_http.py",
+            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
+        )
+        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
+
+        ctk.CTkButton(card_lf, text="Browse", width=80,
+                      fg_color=C_ENTRY, hover_color=C_HOVER,
+                      font=ctk.CTkFont(size=12), corner_radius=6,
+                      command=self._browse_locustfile
+                      ).grid(row=0, column=2, padx=(0, 8), pady=10)
+
+        ctk.CTkButton(card_lf, text="✖", width=36,
+                      fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
+                      font=ctk.CTkFont(size=12), corner_radius=6,
+                      command=self._clear_locustfile
+                      ).grid(row=0, column=3, padx=(0, 16), pady=10)
+
         bottom = ctk.CTkFrame(outer, fg_color="transparent")
         bottom.grid(row=1, column=0, sticky="ew")
         bottom.grid_columnconfigure(0, weight=1)
@@ -568,7 +697,7 @@ class LocustGUI(ctk.CTk):
                      fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
                      ).grid(row=0, column=1, padx=(0,12), pady=(10,0), sticky="w")
         ctk.CTkLabel(run_card, text="Locust + Reachability",
-                     font=ctk.CTkFont(size=12),
+                     font=ctk.CTkFont(size=10),
                      fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
                      ).grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
         self._run_card = run_card
@@ -585,36 +714,11 @@ class LocustGUI(ctk.CTk):
                      fg_color="transparent", text_color="#aaaaaa", anchor="w")
         self._stop_title_lbl.grid(row=0, column=1, padx=(0,12), pady=(10,0), sticky="w")
         self._stop_sub_lbl = ctk.CTkLabel(stop_card, text="Terminate Locust process",
-                     font=ctk.CTkFont(size=12),
+                     font=ctk.CTkFont(size=10),
                      fg_color="transparent", text_color="#666666", anchor="w")
         self._stop_sub_lbl.grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
         self._stop_card = stop_card
         self._stop_enabled = False
-        
-        s_row = self._card_header(scroll, "Locustfile", s_row)
-        card_lf = self._card(scroll, s_row); s_row += 1
-
-        ctk.CTkLabel(card_lf, text="File", font=ctk.CTkFont(size=12),
-                     text_color=C_MUTED, anchor="w", width=self.LBL_W
-                     ).grid(row=0, column=0, padx=(16, 8), pady=10, sticky="w")
-
-        self._locustfile_label = ctk.CTkLabel(
-            card_lf, text="default: Locustfile_http.py",
-            font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
-        )
-        self._locustfile_label.grid(row=0, column=1, padx=(0, 8), pady=10, sticky="ew")
-
-        ctk.CTkButton(card_lf, text="Browse", width=80,
-                      fg_color=darken(C_CARD), hover_color=C_HOVER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._browse_locustfile
-                      ).grid(row=0, column=2, padx=(0, 8), pady=10)
-
-        ctk.CTkButton(card_lf, text="✖", width=36,
-                      fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
-                      font=ctk.CTkFont(size=12), corner_radius=6,
-                      command=self._clear_locustfile
-                      ).grid(row=0, column=3, padx=(0, 16), pady=10)
 
         return outer
 
@@ -651,23 +755,23 @@ class LocustGUI(ctk.CTk):
         card_out.grid_columnconfigure(1, weight=1)
         t_row += 1
 
-        ctk.CTkLabel(card_out, text="Report name", font=ctk.CTkFont(size=12),
-                     text_color=C_MUTED, anchor="w", width=self.LBL_W
+        ctk.CTkLabel(card_out, text="Report name", font=ctk.CTkFont(size=15),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=0, column=0, padx=(16,8), pady=10, sticky="w")
-        self._report_name_entry = ctk.CTkEntry(card_out, fg_color=darken(C_CARD),
+        self._report_name_entry = ctk.CTkEntry(card_out, fg_color=C_ENTRY,
                                                placeholder_text="Locust_Report")
         self._report_name_entry.insert(0, "Locust_Report")
         self._report_name_entry.grid(row=0, column=1, columnspan=2, padx=(0,16), pady=10, sticky="ew")
 
-        ctk.CTkLabel(card_out, text="Save to", font=ctk.CTkFont(size=12),
-                     text_color=C_MUTED, anchor="w", width=self.LBL_W
+        ctk.CTkLabel(card_out, text="Save to", font=ctk.CTkFont(size=15),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=1, column=0, padx=(16,8), pady=10, sticky="w")
-        self._report_dir_entry = ctk.CTkEntry(card_out, fg_color=darken(C_CARD),
+        self._report_dir_entry = ctk.CTkEntry(card_out, fg_color=C_ENTRY,
                                               placeholder_text=REPORT_DIR)
         self._report_dir_entry.insert(0, REPORT_DIR)
         self._report_dir_entry.grid(row=1, column=1, padx=(0,8), pady=10, sticky="ew")
         ctk.CTkButton(card_out, text="Browse", width=80,
-                      fg_color=darken(C_CARD), hover_color=C_HOVER,
+                      fg_color=C_ENTRY, hover_color=C_HOVER,
                       font=ctk.CTkFont(size=12), corner_radius=6,
                       command=self._browse_save_dir
                       ).grid(row=1, column=2, padx=(0,16), pady=10)
@@ -689,27 +793,27 @@ class LocustGUI(ctk.CTk):
         self._cert_sign_frame.grid_columnconfigure(1, weight=1)
         self._cert_sign_frame.grid_remove()
 
-        ctk.CTkLabel(self._cert_sign_frame, text="Certificate", font=ctk.CTkFont(size=12),
-                     text_color=C_MUTED, anchor="w", width=self.LBL_W
+        ctk.CTkLabel(self._cert_sign_frame, text="Certificate", font=ctk.CTkFont(size=15),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=0, column=0, padx=(16,8), pady=8, sticky="w")
-        self._cert_path_entry = ctk.CTkEntry(self._cert_sign_frame, fg_color=darken(C_CARD),
+        self._cert_path_entry = ctk.CTkEntry(self._cert_sign_frame, fg_color=C_ENTRY,
                                              placeholder_text="Path to cert.p12")
         default_cert = os.path.join(REPORT_DIR, "cert.p12")
         if os.path.exists(default_cert):
             self._cert_path_entry.insert(0, default_cert)
         self._cert_path_entry.grid(row=0, column=1, padx=(0,8), pady=8, sticky="ew")
         ctk.CTkButton(self._cert_sign_frame, text="Browse", width=80,
-                      fg_color=darken(C_CARD), hover_color=C_HOVER,
+                      fg_color=C_ENTRY, hover_color=C_HOVER,
                       font=ctk.CTkFont(size=12), corner_radius=6,
                       command=self._browse_cert
                       ).grid(row=0, column=2, padx=(0,16), pady=8)
 
-        ctk.CTkLabel(self._cert_sign_frame, text="Password", font=ctk.CTkFont(size=12),
-                     text_color=C_MUTED, anchor="w", width=self.LBL_W
+        ctk.CTkLabel(self._cert_sign_frame, text="Password", font=ctk.CTkFont(size=15),
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=1, column=0, padx=(16,8), pady=(0,12), sticky="w")
         self.cert_pass = ctk.CTkEntry(self._cert_sign_frame, show="•",
                                       placeholder_text="Password for cert.p12",
-                                      fg_color=darken(C_CARD))
+                                      fg_color=C_ENTRY)
         self.cert_pass.grid(row=1, column=1, columnspan=2, padx=(0,16), pady=(0,12), sticky="ew")
 
         gen_card = ctk.CTkFrame(outer, fg_color=C_PURPLE, corner_radius=10, cursor="hand2")
@@ -723,7 +827,7 @@ class LocustGUI(ctk.CTk):
                      fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
                      ).grid(row=0, column=1, padx=(0,12), pady=(10,0), sticky="w")
         ctk.CTkLabel(gen_card, text="Export results to PDF",
-                     font=ctk.CTkFont(size=12),
+                     font=ctk.CTkFont(size=10),
                      fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
                      ).grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
         self.after(50, lambda: bind_card(gen_card, self.generate_report, darken(C_PURPLE, 25), C_PURPLE))
@@ -750,6 +854,28 @@ class LocustGUI(ctk.CTk):
         if path:
             self._cert_path_entry.delete(0, "end")
             self._cert_path_entry.insert(0, path)
+
+    def _browse_locustfile(self):
+        path = fd.askopenfilename(
+            title="Select Locustfile",
+            initialdir=os.path.join(BASE_DIR, "locust_tests"),
+            filetypes=[("Python files", "*.py"), ("All files", "*.*")]
+        )
+        if path:
+            self.locustfile_path = path
+            self._locustfile_label.configure(
+                text=os.path.basename(path),
+                text_color=C_TEXT
+            )
+            self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
+
+    def _clear_locustfile(self):
+        self.locustfile_path = None
+        self._locustfile_label.configure(
+            text="default: Locustfile_http.py",
+            text_color=C_MUTED
+        )
+        self.write_log("↩ Locustfile reset to default")
 
     # ================================================================
     # LOG
@@ -783,7 +909,7 @@ class LocustGUI(ctk.CTk):
 
         self.status_bar = ctk.CTkLabel(
             self, text="●  Ready",
-            font=ctk.CTkFont(size=12), text_color=C_MUTED,
+            font=ctk.CTkFont(size=10), text_color=C_MUTED,
             anchor="w", fg_color=C_SIDEBAR, corner_radius=0, height=22
         )
         self.status_bar.grid(row=2, column=0, columnspan=2, sticky="ew", padx=0)
@@ -795,8 +921,8 @@ class LocustGUI(ctk.CTk):
     def _card_header(self, parent, text, row):
         ctk.CTkLabel(
             parent, text=text.upper(),
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=C_MUTED, anchor="w"
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=C_HEADER, anchor="w"
         ).grid(row=row, column=0, padx=20, pady=(16, 4), sticky="w")
         return row + 1
 
@@ -811,22 +937,22 @@ class LocustGUI(ctk.CTk):
 
     def _field_row(self, card, row, label, key, default, col=0, ph=None):
         ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=15),
-                     text_color="#c5cfe0", anchor="w", width=self.LBL_W
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
         e = ctk.CTkEntry(card, width=self.ENTR_W,
                          placeholder_text=ph or default or "",
-                         fg_color=darken(C_CARD))
+                         fg_color=C_ENTRY)
         if default:
             e.insert(0, default)
         e.grid(row=row, column=col+1, padx=(0, 16), pady=10, sticky="ew")
         self.entries[key] = e
-        
+
     def _combo_row(self, card, row, label, key, values, default, col=0):
         ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=15),
-                     text_color="#c5cfe0", anchor="w", width=self.LBL_W
+                     text_color=C_LABEL, anchor="w", width=self.LBL_W
                      ).grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
         cb = ctk.CTkComboBox(card, width=self.ENTR_W, values=values,
-                             fg_color=darken(C_CARD),
+                             fg_color=C_ENTRY,
                              button_color=C_ACTIVE,
                              button_hover_color=C_HOVER,
                              dropdown_fg_color=C_CARD,
@@ -879,28 +1005,6 @@ class LocustGUI(ctk.CTk):
 
     def _get_target_clean(self):
         return (self.get("target").replace("https://","").replace("http://","").split("/")[0])
-        
-    def _browse_locustfile(self):
-        path = fd.askopenfilename(
-            title="Select Locustfile",
-            initialdir=os.path.join(BASE_DIR, "locust_tests"),
-            filetypes=[("Python files", "*.py"), ("All files", "*.*")]
-        )
-        if path:
-            self.locustfile_path = path
-            self._locustfile_label.configure(
-                text=os.path.basename(path),
-                text_color=C_TEXT
-            )
-            self.write_log(f"✓ Locustfile: {os.path.basename(path)}")
-
-    def _clear_locustfile(self):
-        self.locustfile_path = None
-        self._locustfile_label.configure(
-            text="default: Locustfile_http.py",
-            text_color=C_MUTED
-        )
-        self.write_log("↩ Locustfile reset to default")
 
     def _get_source_range(self):
         start = self._get_ip_start()
@@ -1120,7 +1224,6 @@ class LocustGUI(ctk.CTk):
         finally:
             self._run_card.configure(fg_color=C_SUCCESS, cursor="hand2")
             self._set_stop_enabled(False)
-
 
     def stop_locust(self):
         if not self._stop_enabled:
