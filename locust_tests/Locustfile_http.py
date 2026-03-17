@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "network"))
+from Network_monitor import NetworkMonitor
 
 BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR       = os.path.join(BASE_DIR, "data")
@@ -91,92 +93,8 @@ def detect_network_interface():
                     return interface
     except Exception:
         pass
-    return "eth0"
+    return "ens33"
 
-
-# ============================================================
-#  NETWORK MONITOR
-# ============================================================
-
-class NetworkMonitor:
-    def __init__(self, interface="ens33", interval=1, output_file=None):
-        self.interface   = interface
-        self.interval    = interval
-        self.output_file = output_file or NETWORK_FILE
-        self.running     = False
-        self.thread      = None
-
-    def _read_net_dev(self):
-        try:
-            with open("/proc/net/dev", "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith(self.interface + ":"):
-                        parts    = line.split(":")[1].split()
-                        rx_total = int(parts[0])
-                        tx_total = int(parts[8])
-                        return rx_total, tx_total
-        except (FileNotFoundError, IndexError, ValueError) as e:
-            print(f"Error reading /proc/net/dev: {e}")
-        return None, None
-
-    def _monitor_loop(self):
-        prev_rx, prev_tx = self._read_net_dev()
-        if prev_rx is None:
-            print(f"ERROR: Interface {self.interface} not found.")
-            return
-
-        os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
-
-        try:
-            with open(self.output_file, "w", newline="") as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kbps", "tx_kbps"])
-                writer.writerow([int(time.time()), prev_rx, prev_tx, 0.0, 0.0])
-                csvfile.flush()
-
-                flush_counter = 0
-                while self.running:
-                    time.sleep(self.interval)
-                    rx_total, tx_total = self._read_net_dev()
-                    if rx_total is None:
-                        continue
-
-                    rx_diff = max(0, rx_total - prev_rx)
-                    tx_diff = max(0, tx_total - prev_tx)
-                    rx_kbps = rx_diff / 1024
-                    tx_kbps = tx_diff / 1024
-                    prev_rx, prev_tx = rx_total, tx_total
-
-                    writer.writerow([
-                        int(time.time()),
-                        rx_total, tx_total,
-                        round(rx_kbps, 3),
-                        round(tx_kbps, 3)
-                    ])
-
-                    flush_counter += 1
-                    if flush_counter >= 10:
-                        csvfile.flush()
-                        flush_counter = 0
-        except Exception as e:
-            print(f"ERROR in network monitor: {e}")
-
-    def start(self):
-        if self.running:
-            return
-        self.running = True
-        self.thread  = threading.Thread(target=self._monitor_loop, daemon=True)
-        self.thread.start()
-        print(f"✓ Network monitoring started on interface '{self.interface}'")
-
-    def stop(self):
-        if not self.running:
-            return
-        self.running = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=5)
-        print(f"✓ Network monitoring stopped. Data saved to {self.output_file}")
 
 
 # ============================================================

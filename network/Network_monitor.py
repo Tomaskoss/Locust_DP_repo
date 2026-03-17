@@ -55,11 +55,8 @@ class NetworkMonitor:
         try:
             with open(self.output_file, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                # OPRAVA: názov stĺpca kBps (kilobytes/s) namiesto zavádzajúceho kbps
                 writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kBps", "tx_kBps"])
 
-                # OPRAVA: zaznamená baseline hneď pri štarte (t=0, rýchlosť=0)
-                # bez toho by prvý riadok ukazoval delta od posledného reštartu systému
                 writer.writerow([int(time.time()), prev_rx, prev_tx, 0.0, 0.0])
                 csvfile.flush()
 

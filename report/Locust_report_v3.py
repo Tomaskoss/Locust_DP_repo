@@ -377,13 +377,13 @@ def add_network_traffic_charts(network_file, history_file, story,
 
         p5 = os.path.join(REPORT_DIR, "chart_network_speed.png")
         fig, ax = plt.subplots(figsize=(7, 3))
-        ax.fill_between(network_df['timestamp'], network_df['rx_kbps'],
+        ax.fill_between(network_df['timestamp'], network_df['rx_kBps'],
                         alpha=0.12, color="#1A73E8")
-        ax.plot(network_df['timestamp'], network_df['rx_kbps'],
+        ax.plot(network_df['timestamp'], network_df['rx_kBps'],
                 color="#1A73E8", linewidth=1.8, label="RX kB/s")
-        ax.fill_between(network_df['timestamp'], network_df['tx_kbps'],
+        ax.fill_between(network_df['timestamp'], network_df['rx_kBps'],
                         alpha=0.08, color="#7B2FBE")
-        ax.plot(network_df['timestamp'], network_df['tx_kbps'],
+        ax.plot(network_df['timestamp'], network_df['rx_kBps'],
                 color="#7B2FBE", linewidth=1.8, label="TX kB/s")
         for ts in unreachable_ts:
             ax.axvline(x=ts, color="#EA4335", alpha=0.25, linewidth=1)
@@ -398,8 +398,8 @@ def add_network_traffic_charts(network_file, history_file, story,
         tx_kb  = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / 1024
         rx_kb  = rx_kb.iloc[1:]
         tx_kb  = tx_kb.iloc[1:]
-        rxs_nz = network_df[network_df['rx_kbps'] > 0]['rx_kbps']
-        txs_nz = network_df[network_df['tx_kbps'] > 0]['tx_kbps']
+        rxs_nz = network_df[network_df['rx_kBps'] > 0]['rx_kBps']
+        txs_nz = network_df[network_df['rx_kBps'] > 0]['rx_kBps']
 
         def _stat(s):
             return (

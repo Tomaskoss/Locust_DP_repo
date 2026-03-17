@@ -30,6 +30,7 @@ from Create_topology        import create_topology_diagram
 from Locust_report_v3       import create_pdf_report
 from Create_IP_Pool_skript  import main as create_pool
 from Remove_IP_Pool_skript  import main as remove_pool
+from Network_monitor        import NetworkMonitor
 
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.join(BASE_DIR, "report")
@@ -217,6 +218,7 @@ class LocustGUI(ctk.CTk):
         super().__init__()
         apply_theme(initial_theme)
         self._current_theme = initial_theme
+        self._network_monitor = None
 
         self.title("Locust Test GUI")
         self.geometry("1100x800")
@@ -225,6 +227,7 @@ class LocustGUI(ctk.CTk):
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=0)
 
         self.locust_process  = None
         self.log_queue       = queue.Queue()
@@ -236,9 +239,9 @@ class LocustGUI(ctk.CTk):
         self._zoom           = 1.0
 
         self._build_sidebar()
+        self._build_log()
         self._build_main()
         self._load_env_to_gui()
-        self._build_log()
 
         self._show_page("Config")
         self._poll_log_queue()
@@ -271,8 +274,8 @@ class LocustGUI(ctk.CTk):
 
     def _load_env_to_gui(self):
         mapping = {
-            "target":          os.getenv("TARGET_HOST"),
-            "interface":       os.getenv("INTERFACE"),
+            "target":           os.getenv("TARGET_HOST"),
+            "interface":        os.getenv("INTERFACE"),
             "test_type":       os.getenv("TEST_TYPE"),
             "ip_start":        os.getenv("IP_START"),
             "ip_end":          os.getenv("IP_END"),
@@ -459,8 +462,10 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _build_main(self):
-        self.main = ctk.CTkFrame(self, corner_radius=0, fg_color=C_CONTENT)
-        self.main.grid(row=0, column=1, sticky="nsew")
+        self.main = ctk.CTkFrame(self._paned, corner_radius=0, fg_color=C_CONTENT)
+        self._paned.add(self.main,        minsize=300, stretch="always")
+        self._paned.add(self._logframe,   minsize=80,  stretch="never")
+
         self.main.grid_columnconfigure(0, weight=1)
         self.main.grid_rowconfigure(2, weight=1)
 
@@ -482,6 +487,8 @@ class LocustGUI(ctk.CTk):
         self._pages["Config"] = self._build_page_config(self.page_container)
         self._pages["HTTP"]   = self._build_page_http(self.page_container)
         self._pages["Report"] = self._build_page_report(self.page_container)
+        self.after(100, self._set_sash_default)
+
 
     def _show_page(self, name):
         for label, btn in self._nav_buttons.items():
@@ -501,6 +508,10 @@ class LocustGUI(ctk.CTk):
         icon = next(ic for ic, lb in self.NAV_ITEMS if lb == name)
         self.page_title.configure(text=f"{icon}  {name}")
         self._active_page = name
+    def _set_sash_default(self):
+        total = self._paned.winfo_height()
+        log_height = 200  # ← nastav podľa želanej výšky logu
+        self._paned.sash_place(0, 0, total - log_height)
 
     # ================================================================
     # PAGE – CONFIG
@@ -597,12 +608,27 @@ class LocustGUI(ctk.CTk):
         self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "",  col=2, ph="= IP range start")
         self._combo_row(card3, 1, "Interface", "reach_interface",[""] + get_network_interfaces(), "",  col=2)
         self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0)
+        
+        
+        row = self._card_header(scroll, "Network Monitor", row)
+        card_mon = self._card(scroll, row); row += 1
+
+        ifaces = get_network_interfaces()
+        self._combo_row(
+            card_mon, 0,
+            "Interface",
+            "monitor_interface",
+            ifaces,
+            os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33")
+            )
 
         row = self._card_header(scroll, "Actions", row)
         bf = ctk.CTkFrame(scroll, fg_color="transparent")
         bf.grid(row=row, column=0, padx=16, pady=(4,16), sticky="ew")
         bf.grid_columnconfigure((0,1), weight=1)
         row += 1
+        
+        
 
         for col, (icon, label, sub, cmd, color) in enumerate([
             ("⚙", "Setup", "IP Pool + Topology",  self.setup_env, C_BLUE),
@@ -882,17 +908,28 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def _build_log(self):
-        log_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=darken(C_CONTENT, 10))
-        log_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
-        log_frame.grid_columnconfigure(0, weight=1)
+        self._paned = tk.PanedWindow(
+            self, orient=tk.VERTICAL,
+            bg="#2a2a2a", sashwidth=6,
+            sashrelief="raised", sashpad=2
+        )
+        self._paned.grid(row=0, column=1, sticky="nsew")
+        self.grid_rowconfigure(0, weight=1)
 
-        hdr = ctk.CTkFrame(log_frame, fg_color="transparent")
-        hdr.grid(row=0, column=0, padx=16, pady=(8,4), sticky="ew")
+        # logframe vytvoríme teraz, do panedwindow pridáme neskôr v _build_main
+        self._logframe = tk.Frame(self._paned, bg="#0d1117")
+        self._logframe.grid_columnconfigure(0, weight=1)
+        self._logframe.grid_rowconfigure(1, weight=1)
+
+        hdr = tk.Frame(self._logframe, bg="#0d1117")
+        hdr.grid(row=0, column=0, padx=16, pady=(6, 2), sticky="ew")
         hdr.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(hdr, text="Output / Log",
-                     font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=C_MUTED).grid(row=0, column=0, sticky="w")
+        tk.Label(hdr, text="Output Log",
+                 font=("Courier New", 10, "bold"),
+                 bg="#0d1117", fg=C_MUTED
+                 ).grid(row=0, column=0, sticky="w")
+
         ctk.CTkButton(hdr, text="Clear", command=self.clear_log,
                       fg_color="#333", hover_color="#555",
                       font=ctk.CTkFont(size=11),
@@ -900,19 +937,21 @@ class LocustGUI(ctk.CTk):
                       ).grid(row=0, column=1, sticky="e")
 
         self.log = ctk.CTkTextbox(
-            log_frame, corner_radius=0, height=180,
+            self._logframe, corner_radius=0,
             font=ctk.CTkFont(size=11, family="Courier New"),
             fg_color="#0d1117", text_color="#c9d1d9",
             state="disabled"
         )
-        self.log.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        self.log.grid(row=1, column=0, sticky="nsew")
 
-        self.status_bar = ctk.CTkLabel(
-            self, text="●  Ready",
-            font=ctk.CTkFont(size=10), text_color=C_MUTED,
-            anchor="w", fg_color=C_SIDEBAR, corner_radius=0, height=22
+        self.statusbar = ctk.CTkLabel(
+            self._logframe, text="Ready",
+            font=ctk.CTkFont(size=10),
+            text_color=C_MUTED, anchor="w",
+            fg_color=C_SIDEBAR, corner_radius=0, height=22
         )
-        self.status_bar.grid(row=2, column=0, columnspan=2, sticky="ew", padx=0)
+        self.statusbar.grid(row=2, column=0, sticky="ew")
+
 
     # ================================================================
     # CARD / FIELD HELPERS
@@ -1028,7 +1067,7 @@ class LocustGUI(ctk.CTk):
                 self.log.insert("end", msg + "\n")
                 self.log.see("end")
                 self.log.configure(state="disabled")
-                self.status_bar.configure(text=f"●  {msg[:100]}")
+                self.statusbar.configure(text=f"●  {msg[:100]}")
         except queue.Empty:
             pass
         finally:
@@ -1038,7 +1077,7 @@ class LocustGUI(ctk.CTk):
         self.log.configure(state="normal")
         self.log.delete("0.0", "end")
         self.log.configure(state="disabled")
-        self.status_bar.configure(text="●  Log cleared")
+        self.statusbar.configure(text="●  Log cleared")
 
     def get(self, key):
         return self.entries[key].get().strip()
@@ -1192,6 +1231,18 @@ class LocustGUI(ctk.CTk):
             self._save_env_from_gui()
             self._save_test_config(BASE_DIR)
             self.write_log("=" * 60)
+            
+                # ── Network Monitor ────────────────────────────────
+            self._network_monitor = NetworkMonitor(
+                interface=self.get("interface"),
+                interval=1,
+                output_file=os.path.join(DATA_DIR, "network_usage.csv")
+            )
+            self._network_monitor.start()
+            self.write_log(f"📡 Network monitor started on {self.get('interface')}")
+            # ──────────────────────────────────────────────────
+            
+            
             self.write_log("▶ Starting Reachability monitoring...")
             reach_thread = threading.Thread(target=self._run_reachability,
                                             args=(run_time, interval), daemon=True)
@@ -1222,6 +1273,11 @@ class LocustGUI(ctk.CTk):
         except Exception as e:
             self.write_log(f"✗ Test error: {e}")
         finally:
+ # ── Network Monitor stop ───────────────────────
+            if  self._network_monitor:
+                self._network_monitor.stop()
+                self._network_monitor = None
+                self.write_log("📡 Network monitor stopped")
             self._run_card.configure(fg_color=C_SUCCESS, cursor="hand2")
             self._set_stop_enabled(False)
 
