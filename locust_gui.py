@@ -206,9 +206,10 @@ def get_network_interfaces():
 class LocustGUI(ctk.CTk):
 
     NAV_ITEMS = [
-        ("⚙", "Config"),
+        ("⚙",  "Config"),
         ("🌐", "HTTP"),
-        ("📄", "Report"),
+        ("📄", "Generate Report"),
+        ("📋", "Reports"),
     ]
 
     LBL_W  = 160
@@ -486,7 +487,8 @@ class LocustGUI(ctk.CTk):
 
         self._pages["Config"] = self._build_page_config(self.page_container)
         self._pages["HTTP"]   = self._build_page_http(self.page_container)
-        self._pages["Report"] = self._build_page_report(self.page_container)
+        self._pages["Generate Report"] = self._build_page_report(self.page_container)
+        self._pages["Reports"]         = self._build_page_reports(self.page_container)
         self.after(100, self._set_sash_default)
 
 
@@ -512,6 +514,8 @@ class LocustGUI(ctk.CTk):
         total = self._paned.winfo_height()
         log_height = 200  # ← nastav podľa želanej výšky logu
         self._paned.sash_place(0, 0, total - log_height)
+        
+
 
     # ================================================================
     # PAGE – CONFIG
@@ -951,6 +955,176 @@ class LocustGUI(ctk.CTk):
             fg_color=C_SIDEBAR, corner_radius=0, height=22
         )
         self.statusbar.grid(row=2, column=0, sticky="ew")
+
+    # ================================================================
+    # PAGE – REPORTS
+    # ================================================================
+
+    def _build_page_reports(self, parent):
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(2, weight=1)
+
+        # ── Toolbar ────────────────────────────────────────────
+        toolbar = ctk.CTkFrame(outer, fg_color=C_CARD, corner_radius=0, height=44)
+        toolbar.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 1))
+        toolbar.grid_propagate(False)
+        toolbar.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkButton(
+            toolbar, text="⟳  Refresh", width=110, height=30,
+            fg_color=C_ENTRY, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._refresh_reports
+        ).grid(row=0, column=0, padx=12, pady=7, sticky="w")
+
+        self._reports_dir_label = ctk.CTkLabel(
+            toolbar, text=REPORT_DIR,
+            font=ctk.CTkFont(size=10), text_color=C_MUTED, anchor="e"
+        )
+        self._reports_dir_label.grid(row=0, column=1, padx=12, sticky="e")
+
+        # ── Hlavička tabuľky ───────────────────────────────────
+        hdr = ctk.CTkFrame(outer, fg_color=darken(C_CARD, 15), corner_radius=0, height=32)
+        hdr.grid(row=1, column=0, sticky="ew", padx=(8, 0))        
+        hdr.grid_propagate(False)
+        hdr.grid_columnconfigure(0, weight=1)
+        hdr.grid_columnconfigure(1, minsize=220, weight=0)
+        hdr.grid_columnconfigure(2, minsize=160, weight=0)
+        hdr.grid_columnconfigure(3, minsize=110, weight=0)
+
+        for col, txt in enumerate(["Report name", "Created", "Signed", ""]):
+            ctk.CTkLabel(
+                hdr, text=txt.upper(),
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=C_MUTED, anchor="w"
+            ).grid(row=0, column=col,
+                   padx=(4 if col == 0 else 8, 8), pady=6, sticky="w")
+
+        # ── Scroll area pre riadky ─────────────────────────────
+        self._reports_scroll = ctk.CTkScrollableFrame(
+            outer, fg_color="transparent", corner_radius=0
+        )
+        self._reports_scroll.grid(row=2, column=0, sticky="nsew", padx=0, pady=0)
+        self._reports_scroll.grid_columnconfigure(0, weight=1)
+
+        self._refresh_reports()
+        return outer
+
+    # ── Helpery pre Reports ────────────────────────────────────────────
+
+    def _is_pdf_signed(self, path):
+        try:
+            with open(path, "rb") as f:
+                content = f.read()
+            return b"/ByteRange" in content and b"/Contents" in content
+        except Exception:
+            return False
+
+    def _scan_reports(self):
+        reports = []
+        if not os.path.isdir(REPORT_DIR):
+            return reports
+        for fname in sorted(os.listdir(REPORT_DIR), reverse=True):
+            if not fname.lower().endswith(".pdf"):
+                continue
+            fpath = os.path.join(REPORT_DIR, fname)
+            try:
+                ctime = os.path.getmtime(fpath)
+                date_str = time.strftime("%Y-%m-%d  %H:%M", time.localtime(ctime))
+                signed = self._is_pdf_signed(fpath)
+                reports.append((fname, date_str, signed, fpath))
+            except Exception:
+                pass
+        return reports
+
+    def _refresh_reports(self):
+        for w in self._reports_scroll.winfo_children():
+            w.destroy()
+
+        reports = self._scan_reports()
+
+        if not reports:
+            ctk.CTkLabel(
+                self._reports_scroll,
+                text="No PDF reports found in  " + REPORT_DIR,
+                font=ctk.CTkFont(size=12),
+                text_color=C_MUTED
+            ).grid(row=0, column=0, pady=40)
+            return
+
+        for i, (fname, date_str, signed, fpath) in enumerate(reports):
+            bg = C_CARD if i % 2 == 0 else darken(C_CARD, 8)
+            row_frame = ctk.CTkFrame(
+                self._reports_scroll, fg_color=bg, corner_radius=6, height=40
+            )
+            row_frame.grid(row=i, column=0, sticky="ew", padx=0, pady=2)            
+            row_frame.grid_propagate(False)
+            row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(1, minsize=220, weight=0)
+            row_frame.grid_columnconfigure(2, minsize=160, weight=0)
+            row_frame.grid_columnconfigure(3, minsize=110, weight=0)
+
+            # Názov
+            ctk.CTkLabel(
+                row_frame, text=fname,
+                font=ctk.CTkFont(size=16), text_color=C_TEXT, anchor="w"
+            ).grid(row=0, column=0, padx=(4, 8), sticky="w")
+
+            # Dátum
+            ctk.CTkLabel(
+                row_frame, text=date_str,
+                font=ctk.CTkFont(size=16, family="Courier New"),
+                text_color=C_LABEL, anchor="w"
+            ).grid(row=0, column=1, padx=8, sticky="w")
+
+            # Podpis
+            sign_text  = "✅ Signed" if signed else "❌ No"
+            sign_color = C_SUCCESS  if signed else C_MUTED
+            ctk.CTkLabel(
+                row_frame, text=sign_text,
+                font=ctk.CTkFont(size=16), text_color=sign_color, anchor="w"
+            ).grid(row=0, column=2, padx=8, sticky="w")
+
+            # Tlačidlá
+            btn_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+            btn_frame.grid(row=0, column=3, padx=(4, 8), sticky="e")
+
+            ctk.CTkButton(
+                btn_frame, text="Open", width=60, height=26,
+                fg_color=C_ACTIVE, hover_color=darken(C_ACTIVE, 20),
+                font=ctk.CTkFont(size=11), corner_radius=5,
+                command=lambda p=fpath: self._open_report(p)
+            ).grid(row=0, column=0, padx=(0, 4))
+
+            ctk.CTkButton(
+                btn_frame, text="🗑", width=34, height=26,
+                fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
+                font=ctk.CTkFont(size=11), corner_radius=5,
+                command=lambda p=fpath, n=fname: self._delete_report(p, n)
+            ).grid(row=0, column=1)
+
+    def _open_report(self, path):
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", path])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                os.startfile(path)
+        except Exception as e:
+            self.write_log(f"✗ Cannot open report: {e}")
+
+    def _delete_report(self, path, name):
+        try:
+            os.remove(path)
+            self.write_log(f"🗑 Deleted: {name}")
+            self._refresh_reports()
+        except Exception as e:
+            self.write_log(f"✗ Cannot delete {name}: {e}")
+
+
 
 
     # ================================================================
