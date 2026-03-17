@@ -449,7 +449,7 @@ class LocustGUI(ctk.CTk):
         self._theme_combo.grid(row=10, column=0, padx=15, pady=(0, 8))
 
         ctk.CTkLabel(
-            sidebar, text="v3.0  •  2026",
+            sidebar, text="v0.1  •  2026",
             font=ctk.CTkFont(size=10),
             text_color=C_MUTED
         ).grid(row=11, column=0, padx=20, pady=(0, 16), sticky="w")

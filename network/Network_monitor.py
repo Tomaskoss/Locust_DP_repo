@@ -1,41 +1,39 @@
-import os
 import time
 import threading
 import csv
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-
 
 class NetworkMonitor:
-    def __init__(self, interface="ens33", interval=1, output_file=None):
+    def __init__(self, interface="ens33", interval=1, output_file="network_usage.csv"):
         self.interface   = interface
         self.interval    = interval
-        self.output_file = output_file or os.path.join(DATA_DIR, "network_usage.csv")
+        self.output_file = output_file
         self.running     = False
         self.thread      = None
 
     def _read_net_dev(self):
-        """Read network statistics from /proc/net/dev"""
+        """Prečíta RX/TX bajty pre zadané rozhranie z /proc/net/dev."""
         try:
             with open("/proc/net/dev", "r") as f:
                 for line in f:
-                    if self.interface + ":" in line:
+                    # OPRAVA: strip() + startswith() zabráni falošnému matchovaniu
+                    # napr. "ens3:" by chybne matchovalo aj riadok "ens33:"
+                    if line.strip().startswith(self.interface + ":"):
                         parts    = line.split(":")[1].split()
-                        rx_total = int(parts[0])
-                        tx_total = int(parts[8])
+                        rx_total = int(parts[0])   # Stĺpec 1  = prijaté bajty (RX)
+                        tx_total = int(parts[8])   # Stĺpec 9  = odoslané bajty (TX)
                         return rx_total, tx_total
         except (FileNotFoundError, IndexError, ValueError) as e:
             print(f"Error reading network stats: {e}")
         return None, None
 
     def verify_interface(self):
-        """Check if interface exists"""
+        """Overí, či zadané rozhranie existuje na tomto systéme."""
         rx, tx = self._read_net_dev()
         return rx is not None
 
     def list_interfaces(self):
-        """List all available network interfaces"""
+        """Vráti zoznam všetkých dostupných sieťových rozhraní."""
         interfaces = []
         try:
             with open("/proc/net/dev", "r") as f:
@@ -48,46 +46,54 @@ class NetworkMonitor:
         return interfaces
 
     def _monitor_loop(self):
-        """Main monitoring loop that collects network statistics"""
+        """Hlavná monitorovacia slučka – beží v samostatnom vlákne."""
         prev_rx, prev_tx = self._read_net_dev()
         if prev_rx is None:
             print(f"Interface {self.interface} not found.")
             return
 
-        os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
-
         try:
             with open(self.output_file, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kbps", "tx_kbps"])
+                # OPRAVA: názov stĺpca kBps (kilobytes/s) namiesto zavádzajúceho kbps
+                writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kBps", "tx_kBps"])
+
+                # OPRAVA: zaznamená baseline hneď pri štarte (t=0, rýchlosť=0)
+                # bez toho by prvý riadok ukazoval delta od posledného reštartu systému
+                writer.writerow([int(time.time()), prev_rx, prev_tx, 0.0, 0.0])
+                csvfile.flush()
 
                 while self.running:
                     time.sleep(self.interval)
                     rx_total, tx_total = self._read_net_dev()
 
                     if rx_total is None:
-                        continue
+                        continue   # Preskočíme ak čítanie zlyhalo
 
-                    rx_diff = max(0, rx_total - prev_rx)
+                    # Vypočítaj koľko bajtov pribudlo za posledný interval
+                    rx_diff = max(0, rx_total - prev_rx)   # max(0,...) ochrana pred pretečením
                     tx_diff = max(0, tx_total - prev_tx)
-                    rx_kbps = rx_diff / 1024
-                    tx_kbps = tx_diff / 1024
+
+                    # Preveď na kB/s (kilobytes per second, 1 kB = 1024 B)
+                    rx_kBps = rx_diff / 1024
+                    tx_kBps = tx_diff / 1024
+
                     prev_rx, prev_tx = rx_total, tx_total
 
                     writer.writerow([
-                        int(time.time()),
-                        rx_total,
-                        tx_total,
-                        round(rx_kbps, 3),
-                        round(tx_kbps, 3)
+                        int(time.time()),    # Unix timestamp
+                        rx_total,            # Celkové prijaté bajty (kumulatívne)
+                        tx_total,            # Celkové odoslané bajty (kumulatívne)
+                        round(rx_kBps, 3),   # Rýchlosť príjmu v kB/s
+                        round(tx_kBps, 3)    # Rýchlosť odosielania v kB/s
                     ])
-                    csvfile.flush()
+                    csvfile.flush()   # Okamžitý zápis – dôležité pri priebežnom čítaní CSV
 
         except Exception as e:
             print(f"Error in monitoring loop: {e}")
 
     def start(self):
-        """Start network monitoring in a separate thread"""
+        """Spustí monitoring v daemonickom vlákne na pozadí."""
         if self.running:
             print("Network monitoring is already running.")
             return
@@ -105,7 +111,7 @@ class NetworkMonitor:
         print(f"Network monitoring started on {self.interface}...")
 
     def stop(self):
-        """Stop network monitoring"""
+        """Zastaví monitoring a počká kým vlákno korektne skončí (max 5 s)."""
         if not self.running:
             print("Network monitoring is not running.")
             return
@@ -117,7 +123,7 @@ class NetworkMonitor:
 
 
 if __name__ == "__main__":
-    monitor = NetworkMonitor(interface="ens33", interval=1)
+    monitor = NetworkMonitor(interface="ens33", interval=1, output_file="network_usage.csv")
 
     try:
         monitor.start()
