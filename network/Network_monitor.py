@@ -55,36 +55,35 @@ class NetworkMonitor:
         try:
             with open(self.output_file, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kBps", "tx_kBps"])
-
+                writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kbps", "tx_kbps"])
                 writer.writerow([int(time.time()), prev_rx, prev_tx, 0.0, 0.0])
                 csvfile.flush()
 
                 while self.running:
+                    t_before = time.time()
                     time.sleep(self.interval)
+                    actual_elapsed = time.time() - t_before  # skutočný interval
+
                     rx_total, tx_total = self._read_net_dev()
-
                     if rx_total is None:
-                        continue   # Preskočíme ak čítanie zlyhalo
+                        continue
 
-                    # Vypočítaj koľko bajtov pribudlo za posledný interval
-                    rx_diff = max(0, rx_total - prev_rx)   # max(0,...) ochrana pred pretečením
+                    rx_diff = max(0, rx_total - prev_rx)
                     tx_diff = max(0, tx_total - prev_tx)
 
-                    # Preveď na kB/s (kilobytes per second, 1 kB = 1024 B)
-                    rx_kBps = rx_diff / 1024
-                    tx_kBps = tx_diff / 1024
+                    rx_kBps = rx_diff / 1024 / actual_elapsed
+                    tx_kBps = tx_diff / 1024 / actual_elapsed
 
                     prev_rx, prev_tx = rx_total, tx_total
 
                     writer.writerow([
-                        int(time.time()),    # Unix timestamp
-                        rx_total,            # Celkové prijaté bajty (kumulatívne)
-                        tx_total,            # Celkové odoslané bajty (kumulatívne)
-                        round(rx_kBps, 3),   # Rýchlosť príjmu v kB/s
-                        round(tx_kBps, 3)    # Rýchlosť odosielania v kB/s
+                        int(time.time()),
+                        rx_total,
+                        tx_total,
+                        round(rx_kBps, 3),
+                        round(tx_kBps, 3)
                     ])
-                    csvfile.flush()   # Okamžitý zápis – dôležité pri priebežnom čítaní CSV
+                    csvfile.flush()
 
         except Exception as e:
             print(f"Error in monitoring loop: {e}")

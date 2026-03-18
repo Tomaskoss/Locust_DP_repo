@@ -276,21 +276,16 @@ def add_time_series_charts(history_df, story):
     if 'Timestamp' not in history_df.columns:
         return
 
-    history_df = history_df.copy()
     history_df['Timestamp'] = pd.to_datetime(history_df['Timestamp'], unit='s')
-    history_df['elapsed']   = (
-        history_df['Timestamp'] - history_df['Timestamp'].iloc[0]
-    ).dt.total_seconds()
 
     p1 = os.path.join(REPORT_DIR, "chart_rps_failures.png")
     fig, ax = plt.subplots(figsize=(7, 3))
-    ax.fill_between(history_df['elapsed'], history_df['Requests/s'],
+    ax.fill_between(history_df['Timestamp'], history_df['Requests/s'],
                     alpha=0.15, color="#1A73E8")
-    ax.plot(history_df['elapsed'], history_df['Requests/s'],
+    ax.plot(history_df['Timestamp'], history_df['Requests/s'],
             label='Requests/s', color="#1A73E8", linewidth=1.8)
-    ax.plot(history_df['elapsed'], history_df['Failures/s'],
+    ax.plot(history_df['Timestamp'], history_df['Failures/s'],
             label='Failures/s', color="#EA4335", linewidth=1.8, linestyle="--")
-    ax.set_xlabel("Time [s]")
     ax.set_ylabel("Requests/s")
     ax.legend(fontsize=8, framealpha=0.8)
     _apply_chart_style(ax, "Requests per Second Over Time")
@@ -301,18 +296,17 @@ def add_time_series_charts(history_df, story):
     p2 = os.path.join(REPORT_DIR, "chart_response_times.png")
     fig, ax = plt.subplots(figsize=(7, 3))
     ax.fill_between(
-        history_df['elapsed'],
+        history_df['Timestamp'],
         history_df['Total Min Response Time'] / 1000,
         history_df['Total Max Response Time'] / 1000,
         alpha=0.08, color="#1A73E8"
     )
-    ax.plot(history_df['elapsed'], history_df['Total Min Response Time']    / 1000,
+    ax.plot(history_df['Timestamp'], history_df['Total Min Response Time']    / 1000,
             label='Min',    linestyle='--', color="#34A853", linewidth=1.5)
-    ax.plot(history_df['elapsed'], history_df['Total Median Response Time'] / 1000,
+    ax.plot(history_df['Timestamp'], history_df['Total Median Response Time'] / 1000,
             label='Median', linestyle='-',  color="#1A73E8", linewidth=2)
-    ax.plot(history_df['elapsed'], history_df['Total Max Response Time']    / 1000,
+    ax.plot(history_df['Timestamp'], history_df['Total Max Response Time']    / 1000,
             label='Max',    linestyle='-.', color="#EA4335", linewidth=1.5)
-    ax.set_xlabel("Time [s]")
     ax.set_ylabel("Response Time (s)")
     ax.legend(fontsize=8, framealpha=0.8)
     _apply_chart_style(ax, "Response Times Over Time")
@@ -323,11 +317,10 @@ def add_time_series_charts(history_df, story):
     if 'User Count' in history_df.columns:
         p3 = os.path.join(REPORT_DIR, "chart_users.png")
         fig, ax = plt.subplots(figsize=(7, 3))
-        ax.fill_between(history_df['elapsed'], history_df['User Count'],
+        ax.fill_between(history_df['Timestamp'], history_df['User Count'],
                         alpha=0.15, color="#7B2FBE")
-        ax.plot(history_df['elapsed'], history_df['User Count'],
+        ax.plot(history_df['Timestamp'], history_df['User Count'],
                 color="#7B2FBE", linewidth=1.8, label="Users")
-        ax.set_xlabel("Time [s]")
         ax.set_ylabel("Number of Users")
         ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         ax.legend(fontsize=8)
@@ -344,37 +337,33 @@ def add_network_traffic_charts(network_file, history_file, story,
         return
     try:
         network_df = pd.read_csv(network_file)
-
-        # FIX: konvertuj Unix timestamp na elapsed sekundy
-        t0 = network_df['timestamp'].iloc[0]
-        network_df['elapsed'] = network_df['timestamp'] - t0
+        network_df = network_df[network_df['timestamp'] > 1_000_000_000].copy()  
+        network_df['timestamp'] = pd.to_datetime(network_df['timestamp'], unit='s')
 
         unreachable_ts = []
         if os.path.exists(history_file):
             try:
                 hdf = pd.read_csv(history_file)
-                t0h = hdf['Timestamp'].iloc[0]
-                hdf['elapsed'] = hdf['Timestamp'] - t0h
+                hdf['Timestamp'] = pd.to_datetime(hdf['Timestamp'], unit='s')
                 if 'Failures/s' in hdf.columns and 'Requests/s' in hdf.columns:
                     for _, row in hdf.iterrows():
                         if (row['Requests/s'] > 0 and
                                 (row['Failures/s'] / row['Requests/s']) > failure_threshold):
-                            unreachable_ts.append(row['elapsed'])
+                            unreachable_ts.append(row['Timestamp'])
             except Exception as e:
                 print(f"Warning: {e}")
 
         p4    = os.path.join(REPORT_DIR, "chart_network_total.png")
-        rx_mb = network_df['rx_total'] / (1024 * 1024)
-        tx_mb = network_df['tx_total'] / (1024 * 1024)
+        rx_mb = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / (1024 * 1024)
+        tx_mb = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / (1024 * 1024)
         fig, ax1 = plt.subplots(figsize=(7, 3))
-        ax1.fill_between(network_df['elapsed'], rx_mb, alpha=0.12, color="#1A73E8")
-        ax1.plot(network_df['elapsed'], rx_mb,
+        ax1.fill_between(network_df['timestamp'], rx_mb, alpha=0.12, color="#1A73E8")
+        ax1.plot(network_df['timestamp'], rx_mb,
                  color="#1A73E8", linewidth=1.8, label="RX MB")
-        ax1.set_xlabel("Time [s]")
         ax1.set_ylabel("Received MB", color="#1A73E8", fontsize=9)
         ax2 = ax1.twinx()
-        ax2.fill_between(network_df['elapsed'], tx_mb, alpha=0.08, color="#7B2FBE")
-        ax2.plot(network_df['elapsed'], tx_mb,
+        ax2.fill_between(network_df['timestamp'], tx_mb, alpha=0.08, color="#7B2FBE")
+        ax2.plot(network_df['timestamp'], tx_mb,
                  color="#7B2FBE", linewidth=1.8, label="TX MB")
         ax2.set_ylabel("Transmitted MB", color="#7B2FBE", fontsize=9)
         for ts in unreachable_ts:
@@ -389,18 +378,16 @@ def add_network_traffic_charts(network_file, history_file, story,
 
         p5 = os.path.join(REPORT_DIR, "chart_network_speed.png")
         fig, ax = plt.subplots(figsize=(7, 3))
-        ax.fill_between(network_df['elapsed'], network_df['rx_kBps'],
+        ax.fill_between(network_df['timestamp'], network_df['rx_kbps'],
                         alpha=0.12, color="#1A73E8")
-        ax.plot(network_df['elapsed'], network_df['rx_kBps'],
+        ax.plot(network_df['timestamp'], network_df['rx_kbps'],
                 color="#1A73E8", linewidth=1.8, label="RX kB/s")
-        # FIX: tx_kBps namiesto rx_kBps
-        ax.fill_between(network_df['elapsed'], network_df['tx_kBps'],
+        ax.fill_between(network_df['timestamp'], network_df['tx_kbps'],
                         alpha=0.08, color="#7B2FBE")
-        ax.plot(network_df['elapsed'], network_df['tx_kBps'],
+        ax.plot(network_df['timestamp'], network_df['tx_kbps'],
                 color="#7B2FBE", linewidth=1.8, label="TX kB/s")
         for ts in unreachable_ts:
             ax.axvline(x=ts, color="#EA4335", alpha=0.25, linewidth=1)
-        ax.set_xlabel("Time [s]")
         ax.set_ylabel("Speed (kB/s)")
         ax.legend(fontsize=8)
         _apply_chart_style(ax, "Network Transfer Speed")
@@ -412,9 +399,8 @@ def add_network_traffic_charts(network_file, history_file, story,
         tx_kb  = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / 1024
         rx_kb  = rx_kb.iloc[1:]
         tx_kb  = tx_kb.iloc[1:]
-        rxs_nz = network_df[network_df['rx_kBps'] > 0]['rx_kBps']
-        # FIX: tx_kBps namiesto rx_kBps
-        txs_nz = network_df[network_df['tx_kBps'] > 0]['tx_kBps']
+        rxs_nz = network_df[network_df['rx_kbps'] > 0]['rx_kbps']
+        txs_nz = network_df[network_df['tx_kbps'] > 0]['tx_kbps']
 
         def _stat(s):
             return (
@@ -504,11 +490,11 @@ def add_network_traffic_charts(network_file, history_file, story,
 
 
 # ================================================================
-# SIGNING
 # ================================================================
 
 def sign_report(input_path, output_path,
                 p12_path="cert.p12", p12_pass=b"yourpassword"):
+    """Digitálne podpíše PDF report pomocou .p12 certifikátu (pyHanko)."""
     try:
         from pyhanko.sign import signers
         from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
@@ -649,11 +635,11 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else "OS assigned (random)", S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
-         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                             S["value"])],
+         Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
 
-    # ── COMMENT ───────────────────────────────────────────────────
+    # ── Comment ─────────────────────────────────────────────────
     if comment and comment.strip():
         story.append(ColorBand("  Comment", bg=colors.HexColor("#5F6368")))
         story.append(Spacer(1, 8))
@@ -778,8 +764,7 @@ def create_pdf_report(stats_file, history_file, output_file,
 # === MAIN ===
 if __name__ == "__main__":
     create_pdf_report(
-        stats_file   = STATS_FILE,
-        history_file = HISTORY_FILE,
-        output_file  = PDF_FILE,
+        stats_file  = STATS_FILE,
+        history_file= HISTORY_FILE,
+        output_file = PDF_FILE,
     )
-

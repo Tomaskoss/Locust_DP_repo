@@ -280,9 +280,11 @@ class LocustGUI(ctk.CTk):
             "test_type":       os.getenv("TEST_TYPE"),
             "ip_start":        os.getenv("IP_START"),
             "ip_end":          os.getenv("IP_END"),
+            "ipv4prefix":      os.getenv("IPV4PREFIX", "32"),
             "ip6_start":       os.getenv("IP6_START"),
             "ip6_end":         os.getenv("IP6_END"),
             "ip6_prefix":      os.getenv("IP6_PREFIX"),
+            "ipv6rangeprefix": os.getenv("IPV6RPREFIX", "128"),
             "users":           os.getenv("USERS"),
             "run_time":        os.getenv("RUN_TIME"),
             "spawn_rate":      os.getenv("SPAWN_RATE"),
@@ -310,11 +312,13 @@ class LocustGUI(ctk.CTk):
             "TEST_TYPE":       self.get("test_type"),
             "IP_VERSION":      self._active_ip_version(),
             "IP_START":        self._get_ip_start(),
-            "IP_END":          self._get_ip_end(),
+            "IP_END":          self._get_ip_end(),\
+            "IPV4PREFIX":      self.entries["ipv4prefix"].get(),
             "IP6_START":       self.entries["ip6_start"].get().strip(),
             "IP6_END":         self.entries["ip6_end"].get().strip(),
             "IP6_PREFIX":      self.entries["ip6_prefix"].get().strip(),
             "IPV6_MODE":       self.ipv6_mode.get(),
+            "IPV6RPREFIX":     self.entries["ipv6rangeprefix"].get(),
             "USERS":           self.get("users"),
             "RUN_TIME":        self.get("run_time"),
             "SPAWN_RATE":      self.get("spawn_rate"),
@@ -521,6 +525,10 @@ class LocustGUI(ctk.CTk):
     # PAGE – CONFIG
     # ================================================================
 
+        # ================================================================
+    # PAGE – CONFIG
+    # ================================================================
+
     def _build_page_config(self, parent):
         scroll = make_scroll_frame(parent)
         scroll.grid(row=0, column=0, sticky="nsew")
@@ -548,6 +556,7 @@ class LocustGUI(ctk.CTk):
         self.ip_tab.add("IPv4")
         self.ip_tab.add("IPv6")
 
+        # ── IPv4 tab ──────────────────────────────────────────────
         v4 = self.ip_tab.tab("IPv4")
         v4.grid_columnconfigure(0, minsize=self.LBL_W)
         v4.grid_columnconfigure(1, weight=1)
@@ -563,6 +572,21 @@ class LocustGUI(ctk.CTk):
             e.grid(row=i, column=1, padx=(0,16), pady=6, sticky="ew")
             self.entries[key] = e
 
+        ctk.CTkLabel(v4, text="Prefix /", font=ctk.CTkFont(size=12),
+             text_color=C_LABEL, anchor="w", width=self.LBL_W   
+             ).grid(row=2, column=0, padx=(16,8), pady=6, sticky="w")
+        cb_v4_prefix = ctk.CTkComboBox(
+            v4,
+            values=["32","31","30","29","28","27","26","25","24","16","8"],
+            width=self.ENTR_W, fg_color=C_ENTRY,                  
+            button_color=C_ACTIVE, button_hover_color=C_HOVER,    
+            dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT  
+        )
+        cb_v4_prefix.set("32")
+        cb_v4_prefix.grid(row=2, column=1, padx=(0,16), pady=6, sticky="ew")
+        self.entries["ipv4prefix"] = cb_v4_prefix
+
+        # ── IPv6 tab ──────────────────────────────────────────────
         v6 = self.ip_tab.tab("IPv6")
         v6.grid_columnconfigure(1, weight=1)
         v6.grid_columnconfigure(3, weight=1)
@@ -580,6 +604,7 @@ class LocustGUI(ctk.CTk):
                        border_color=C_MUTED
                        ).pack(side="left", padx=4)
 
+        # ── IPv6 Range frame ──────────────────────────────────────
         self.ipv6_range_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_range_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self.ipv6_range_frame.grid_columnconfigure(0, minsize=self.LBL_W)
@@ -594,6 +619,22 @@ class LocustGUI(ctk.CTk):
             e.grid(row=i, column=1, padx=(0,16), pady=4, sticky="ew")
             self.entries[key] = e
 
+        ctk.CTkLabel(self.ipv6_range_frame, text="Prefix /",          
+             font=ctk.CTkFont(size=11), text_color=C_LABEL,           
+             anchor="w", width=self.LBL_W                             
+             ).grid(row=2, column=0, padx=(16,8), pady=4, sticky="w")
+        cb_v6_prefix = ctk.CTkComboBox(
+            self.ipv6_range_frame,                                     
+            values=["128","127","126","120","112","96","64"],
+            width=self.ENTR_W, fg_color=C_ENTRY,                      
+            button_color=C_ACTIVE, button_hover_color=C_HOVER,       
+            dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT      
+        )
+        cb_v6_prefix.set("128")
+        cb_v6_prefix.grid(row=2, column=1, padx=(0,16), pady=4, sticky="ew")
+        self.entries["ipv6rangeprefix"] = cb_v6_prefix
+
+        # ── IPv6 Prefix frame ─────────────────────────────────────
         self.ipv6_prefix_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
@@ -605,6 +646,7 @@ class LocustGUI(ctk.CTk):
         self.entries["ip6_prefix"] = e
         self.ipv6_prefix_frame.grid_remove()
 
+        # ── Reachability ──────────────────────────────────────────
         row = self._card_header(scroll, "Reachability", row)
         card3 = self._card(scroll, row); row += 1
         self._field_row(card3, 0, "Interval (s)",         "reach_interval", "5")
@@ -612,11 +654,10 @@ class LocustGUI(ctk.CTk):
         self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "",  col=2, ph="= IP range start")
         self._combo_row(card3, 1, "Interface", "reach_interface",[""] + get_network_interfaces(), "",  col=2)
         self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0)
-        
-        
+
+        # ── Network Monitor ───────────────────────────────────────
         row = self._card_header(scroll, "Network Monitor", row)
         card_mon = self._card(scroll, row); row += 1
-
         ifaces = get_network_interfaces()
         self._combo_row(
             card_mon, 0,
@@ -624,19 +665,18 @@ class LocustGUI(ctk.CTk):
             "monitor_interface",
             ifaces,
             os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33")
-            )
+        )
 
+        # ── Actions ───────────────────────────────────────────────
         row = self._card_header(scroll, "Actions", row)
         bf = ctk.CTkFrame(scroll, fg_color="transparent")
         bf.grid(row=row, column=0, padx=16, pady=(4,16), sticky="ew")
         bf.grid_columnconfigure((0,1), weight=1)
         row += 1
-        
-        
 
         for col, (icon, label, sub, cmd, color) in enumerate([
-            ("⚙", "Setup", "IP Pool + Topology",  self.setup_env, C_BLUE),
-            ("🗑", "Cleanup", "Remove IP Pool",    self.cleanup,   C_DANGER),
+            ("⚙", "Setup",   "IP Pool + Topology", self.setup_env, C_BLUE),
+            ("🗑", "Cleanup", "Remove IP Pool",      self.cleanup,   C_DANGER),
         ]):
             card_btn = ctk.CTkFrame(bf, fg_color=color, corner_radius=10, cursor="hand2")
             card_btn.grid(row=0, column=col, padx=(0 if col==0 else 8, 8 if col==0 else 0),
@@ -658,6 +698,7 @@ class LocustGUI(ctk.CTk):
             self.after(50, lambda cb=card_btn, c=cmd, cl=color: bind_card(cb, c, darken(cl, 25), cl))
 
         return scroll
+
 
     # ================================================================
     # PAGE – HTTP
@@ -1081,7 +1122,7 @@ class LocustGUI(ctk.CTk):
 
             # Podpis
             sign_text  = "✅ Signed" if signed else "❌ No"
-            sign_color = C_SUCCESS  if signed else C_MUTED
+            sign_color = C_SUCCESS  if signed else C_DANGER
             ctk.CTkLabel(
                 row_frame, text=sign_text,
                 font=ctk.CTkFont(size=16), text_color=sign_color, anchor="w"
@@ -1354,10 +1395,14 @@ class LocustGUI(ctk.CTk):
             self.write_log("=" * 60)
             self.write_log("▶ SETUP – Adding IPs to interface...")
             ip_ver = self._active_ip_version()
+            prefix_len = (self.entries["ipv4prefix"].get()
+                          if ip_ver == "ipv4"
+                          else self.entries["ipv6rangeprefix"].get())
             create_pool(ip_start=self._get_ip_start(), ip_end=self._get_ip_end(),
                         interface=self.get("interface"),
                         output_file=os.path.join(BASE_DIR, "ip_pool.txt"),
-                        ip_version=ip_ver, ip_list=self._get_ip_list())
+                        ip_version=ip_ver, ip_list=self._get_ip_list(),
+                        prefix_len=prefix_len)
             self.write_log(f"✓ IP pool created [{ip_ver.upper()}]")
             self.write_log("▶ Generating topology diagram...")
             create_topology_diagram(target_ip=self._get_target_clean(),
@@ -1576,10 +1621,19 @@ class LocustGUI(ctk.CTk):
         try:
             self.write_log("=" * 60)
             self.write_log("▶ Removing IP pool from interface...")
-            remove_pool(ip_start=self._get_ip_start(), ip_end=self._get_ip_end(),
-                        interface=self.get("interface"),
-                        pool_file=os.path.join(BASE_DIR, "ip_pool.txt"),
-                        ip_version=self._active_ip_version(), ip_list=self._get_ip_list())
+            ip_ver = self._active_ip_version()
+            prefix_len = (self.entries["ipv4prefix"].get()
+                          if ip_ver == "ipv4"
+                          else self.entries["ipv6rangeprefix"].get())
+            remove_pool(
+                ip_start   = self._get_ip_start(),
+                ip_end     = self._get_ip_end(),
+                interface  = self.get("interface"),
+                pool_file  = os.path.join(BASE_DIR, "ip_pool.txt"),
+                ip_version = ip_ver,
+                ip_list    = self._get_ip_list(),
+                prefix_len = prefix_len,
+            )
             self.write_log("✓ Cleanup complete")
             self.write_log("=" * 60)
         except Exception as e:

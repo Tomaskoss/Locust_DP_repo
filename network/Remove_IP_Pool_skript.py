@@ -25,14 +25,17 @@ def generate_ip_range_v6(start_ip, end_ip):
     return [str(ipaddress.IPv6Address(i)) for i in range(start, end + 1)]
 
 
-def remove_ip_from_interface(ip, interface, ip_version="ipv4"):
-    prefix = "128" if ip_version == "ipv6" else "32"
+def remove_ip_from_interface(ip, interface, ip_version="ipv4", prefix_len=None):
+    if prefix_len is None:
+        prefix = "128" if ip_version == "ipv6" else "32"
+    else:
+        prefix = str(prefix_len)
     cmd = ["sudo", "ip", "addr", "del", f"{ip}/{prefix}", "dev", interface]
     try:
         subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
         print(f"[OK] Removed {ip}/{prefix} from {interface}")
     except subprocess.CalledProcessError:
-        print(f"[WARN] Could not remove {ip} (maybe not present?)")
+        print(f"[WARN] Could not remove {ip}/{prefix} (maybe not present?)")
 
 
 def _load_from_pool_file(pool_file):
@@ -49,7 +52,8 @@ def main(
     interface=INTERFACE,
     pool_file=POOL_FILE,
     ip_version="ipv4",
-    ip_list=None,    # hotový zoznam z GUI
+    ip_list=None,
+    prefix_len=None,
 ):
     # ── Zostavenie zoznamu IP ──────────────────────────────────────
     if ip_list is not None:
@@ -81,9 +85,10 @@ def main(
             pass
 
     # ── Odstránenie z interface ────────────────────────────────────
-    print(f"Removing {len(ip_list)} IPs from interface {interface}...")
+    print(f"Removing {len(ip_list)} IPs from interface {interface} "
+          f"with prefix /{prefix_len or ('128' if ip_version == 'ipv6' else '32')}...")
     for ip in ip_list:
-        remove_ip_from_interface(ip, interface, ip_version)
+        remove_ip_from_interface(ip, interface, ip_version, prefix_len)
 
     # ── Zmazanie pool súboru ───────────────────────────────────────
     if os.path.exists(pool_file):
@@ -106,13 +111,15 @@ if __name__ == "__main__":
     parser.add_argument("--pool-file",  default=POOL_FILE,       help="Pool file to delete")
     parser.add_argument("--ip-version", default="ipv4",
                         choices=["ipv4", "ipv6"],                help="IP version")
+    parser.add_argument("--prefix-len", default=None,            help="Prefix length, e.g. 24 or 64")
     args = parser.parse_args()
 
     main(
-        ip_start   = args.start,
-        ip_end     = args.end,
-        interface  = args.interface,
-        pool_file  = args.pool_file,
-        ip_version = args.ip_version,
+        ip_start    = args.start,
+        ip_end      = args.end,
+        interface   = args.interface,
+        pool_file   = args.pool_file,
+        ip_version  = args.ip_version,
+        prefix_len  = args.prefix_len,
     )
 

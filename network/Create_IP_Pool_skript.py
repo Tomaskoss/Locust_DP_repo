@@ -30,8 +30,11 @@ def generate_ip_prefix_v6(prefix_str, max_count=256):
     return [str(ip) for ip in list(net.hosts())[:max_count]]
 
 
-def add_ip_to_interface(ip, interface, ip_version="ipv4"):
-    prefix = "128" if ip_version == "ipv6" else "32"
+def add_ip_to_interface(ip, interface, ip_version="ipv4", prefix_len=None):
+    if prefix_len is None:
+        prefix = "128" if ip_version == "ipv6" else "32"
+    else:
+        prefix = str(prefix_len)
     cmd = ["sudo", "ip", "addr", "add", f"{ip}/{prefix}", "dev", interface]
     try:
         subprocess.run(cmd, check=True, stderr=subprocess.DEVNULL)
@@ -46,8 +49,9 @@ def main(
     interface=INTERFACE,
     output_file=OUTPUT_FILE,
     ip_version="ipv4",
-    ip_list=None,        # hotový zoznam z GUI (IPv6 prefix mód)
-    ip6_prefix=None,     # alternatíva — prefix string, napr. "fd00::/64"
+    ip_list=None,        
+    ip6_prefix=None,
+    prefix_len=None# 
 ):
     # ── Zostavenie zoznamu IP ──────────────────────────────────────
     if ip_list is not None:
@@ -70,7 +74,7 @@ def main(
     # ── Pridanie na interface ──────────────────────────────────────
     print(f"Adding {len(ip_list)} IPs to interface {interface}...")
     for ip in ip_list:
-        add_ip_to_interface(ip, interface, ip_version)
+        add_ip_to_interface(ip, interface, ip_version, prefix_len)
 
     # ── Uloženie pool súboru ───────────────────────────────────────
     print(f"Saving pool to {output_file}...")
