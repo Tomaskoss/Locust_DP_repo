@@ -1032,7 +1032,7 @@ class LocustGUI(ctk.CTk):
             fpath = os.path.join(REPORT_DIR, fname)
             try:
                 ctime = os.path.getmtime(fpath)
-                date_str = time.strftime("%Y-%m-%d  %H:%M", time.localtime(ctime))
+                date_str = time.strftime("%d-%m-%y  %H:%M", time.localtime(ctime))
                 signed = self._is_pdf_signed(fpath)
                 reports.append((fname, date_str, signed, fpath))
             except Exception:

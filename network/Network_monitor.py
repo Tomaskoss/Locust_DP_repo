@@ -1,7 +1,7 @@
 import time
 import threading
 import csv
-
+import os
 
 class NetworkMonitor:
     def __init__(self, interface="ens33", interval=1, output_file="network_usage.csv"):
@@ -120,7 +120,8 @@ class NetworkMonitor:
 
 
 if __name__ == "__main__":
-    monitor = NetworkMonitor(interface="ens33", interval=1, output_file="network_usage.csv")
+    _out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "network_usage.csv")
+    monitor = NetworkMonitor(interface="ens33", interval=1, output_file=_out)
 
     try:
         monitor.start()

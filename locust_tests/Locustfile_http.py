@@ -115,7 +115,7 @@ def on_locust_init(environment, **kwargs):
         print("This is a worker process - network monitoring disabled")
         return
     interface       = os.getenv("INTERFACE") or detect_network_interface()
-    network_monitor = NetworkMonitor(interface=interface, interval=1)
+    network_monitor = NetworkMonitor(interface=interface, interval=1,output_file=NETWORK_FILE)
     print(f"Network monitor initialized for interface: {interface}")
 
 
