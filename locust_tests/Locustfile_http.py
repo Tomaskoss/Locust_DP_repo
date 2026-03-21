@@ -1,4 +1,5 @@
 from locust import events, HttpUser, task, between
+from locust.runners import WorkerRunner
 from datetime import datetime
 from dotenv import load_dotenv
 import os
@@ -11,6 +12,7 @@ import sys
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "network"))
 from Network_monitor import NetworkMonitor
 
@@ -22,6 +24,66 @@ METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
 NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+
+
+
+
+_local = threading.local()
+
+
+def _source_bound_create_connection(address, timeout=None,
+                                    source_address=None, socket_options=None):
+    params = getattr(_local, "source_params", None)
+    if params is None:
+        return urllib3_conn._original_create_connection(
+            address, timeout=timeout,
+            source_address=source_address,
+            socket_options=socket_options,
+        )
+
+    src_ip, src_port, use_v6 = params
+    host, port = address
+    af    = socket.AF_INET6 if use_v6 else socket.AF_INET
+    infos = socket.getaddrinfo(host, port, af, socket.SOCK_STREAM)
+
+    if not infos:
+        raise socket.gaierror(f"getaddrinfo: no results for {host}:{port} (af={af})")
+
+  
+    last_err = None
+    for af, socktype, proto, _, sockaddr in infos:
+        sock = socket.socket(af, socktype, proto)
+
+     
+        if socket_options:
+            for opt in socket_options:
+                sock.setsockopt(*opt)
+
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except (AttributeError, OSError):
+            pass  # Windows alebo starší kernel
+
+        try:
+            if use_v6:
+                sock.bind((src_ip, src_port, 0, 0))
+            else:
+                sock.bind((src_ip, src_port))
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return sock
+        except Exception as e:
+            sock.close()
+            last_err = e
+
+    raise last_err
+
+
+if not hasattr(urllib3_conn, "_source_patch_applied"):
+    urllib3_conn._source_patch_applied       = True
+    urllib3_conn._original_create_connection = urllib3_conn.create_connection
+    urllib3_conn.create_connection           = _source_bound_create_connection
 
 
 # ============================================================
@@ -40,12 +102,31 @@ def is_ipv6(ip):
 def parse_ports(port_str):
     if not port_str or not port_str.strip():
         return None
-    port_str = port_str.strip()
-    if "-" in port_str and "," not in port_str:
-        parts = port_str.split("-")
-        return list(range(int(parts[0]), int(parts[1]) + 1))
-    else:
-        return [int(p.strip()) for p in port_str.split(",")]
+
+    result = []
+
+    for part in port_str.split(","):
+        part = part.strip()
+
+        if "-" in part:
+            try:
+                parts = part.split("-", maxsplit=1)
+                start, end = int(parts[0]), int(parts[1])
+
+                if start > end:
+                    print(f"WARNING: reversed port range '{part}', skipping")
+                    continue
+
+                result.extend(range(start, end + 1))
+            except (ValueError, IndexError):
+                print(f"WARNING: invalid port range '{part}', skipping")
+        else:
+            try:
+                result.append(int(part))
+            except ValueError:
+                print(f"WARNING: invalid port '{part}', skipping")
+
+    return result or None
 
 
 def load_ip_pool():
@@ -54,13 +135,14 @@ def load_ip_pool():
         sys.exit(1)
     try:
         with open(IP_POOL_FILE) as f:
-            ips = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            ips = [line.strip() for line in f
+                   if line.strip() and not line.startswith("#")]
         if not ips:
             print(f"ERROR: {IP_POOL_FILE} is empty!")
             sys.exit(1)
         v6_count = sum(1 for ip in ips if is_ipv6(ip))
         v4_count = len(ips) - v6_count
-        print(f"✓ Loaded {len(ips)} IP addresses from {IP_POOL_FILE} "
+        print(f"Loaded {len(ips)} IP addresses from {IP_POOL_FILE} "
               f"(IPv4: {v4_count}, IPv6: {v6_count})")
         return ips
     except Exception as e:
@@ -76,7 +158,7 @@ def load_port_pool():
             content = f.read().strip()
         ports = parse_ports(content)
         if ports:
-            print(f"✓ Loaded {len(ports)} ports from {PORT_POOL_FILE}")
+            print(f"Loaded {len(ports)} ports from {PORT_POOL_FILE}")
         return ports
     except Exception as e:
         print(f"WARNING: Failed to load port pool: {e}")
@@ -96,7 +178,6 @@ def detect_network_interface():
     return "ens33"
 
 
-
 # ============================================================
 #  TEST METADATA & EVENTS
 # ============================================================
@@ -111,18 +192,19 @@ network_monitor = None
 @events.init.add_listener
 def on_locust_init(environment, **kwargs):
     global network_monitor
-    if hasattr(environment.runner, 'worker_index'):
+    if isinstance(environment.runner, WorkerRunner):
         print("This is a worker process - network monitoring disabled")
         return
     interface       = os.getenv("INTERFACE") or detect_network_interface()
-    network_monitor = NetworkMonitor(interface=interface, interval=1,output_file=NETWORK_FILE)
+    network_monitor = NetworkMonitor(interface=interface, interval=1,
+                                     output_file=NETWORK_FILE)
     print(f"Network monitor initialized for interface: {interface}")
 
 
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):
     global start_time, target_host, target_ip
-    if hasattr(environment.runner, 'worker_index'):
+    if isinstance(environment.runner, WorkerRunner):
         return
 
     start_time  = datetime.now()
@@ -132,10 +214,9 @@ def on_test_start(environment, **kwargs):
         clean_host = (
             target_host
             .replace("https://", "")
-            .replace("http://", "")
+            .replace("http://",  "")
             .split("/")[0]
         )
-
         if clean_host.startswith("["):
             clean_host = clean_host.split("]")[0].lstrip("[")
         else:
@@ -175,7 +256,7 @@ def on_test_start(environment, **kwargs):
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
     global start_time, target_host, target_ip
-    if hasattr(environment.runner, 'worker_index'):
+    if isinstance(environment.runner, WorkerRunner):
         return
 
     if network_monitor:
@@ -197,13 +278,13 @@ def on_test_stop(environment, **kwargs):
                              "test_type", "target_host", "target_ip"])
             writer.writerow([start_time, end_time, str(duration),
                              TEST_TYPE, environment.host, target_ip])
-        print(f"✓ Metadata saved to {METADATA_FILE}")
+        print(f"Metadata saved to {METADATA_FILE}")
     except Exception as e:
-        print(f"✗ Failed to save metadata: {e}")
+        print(f"Failed to save metadata: {e}")
 
 
 # ============================================================
-#  SOURCE IP + PORT ADAPTER  (IPv4 + IPv6)
+#  SOURCE IP ADAPTER
 # ============================================================
 
 class SourceIPAdapter(HTTPAdapter):
@@ -213,41 +294,16 @@ class SourceIPAdapter(HTTPAdapter):
         self._use_v6     = is_ipv6(source_ip)
         super().__init__(**kwargs)
 
-    def init_poolmanager(self, *args, **kwargs):
-        kwargs["source_address"] = (self.source_ip, self.source_port)
-        super().init_poolmanager(*args, **kwargs)
-
     def send(self, request, **kwargs):
-        old_create = urllib3_conn.create_connection
-        src_ip     = self.source_ip
-        src_port   = self.source_port
-        use_v6     = self._use_v6
-
-        def patched_create(address, timeout=None, source_address=None,
-                           socket_options=None):
-            host, port = address
-            af    = socket.AF_INET6 if use_v6 else socket.AF_INET
-            infos = socket.getaddrinfo(host, port, af, socket.SOCK_STREAM)
-            af, socktype, proto, _, sockaddr = infos[0]
-            sock  = socket.socket(af, socktype, proto)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            if socket_options:
-                for opt in socket_options:
-                    sock.setsockopt(*opt)
-            if use_v6:
-                sock.bind((src_ip, src_port, 0, 0))
-            else:
-                sock.bind((src_ip, src_port))
-            sock.settimeout(timeout)
-            sock.connect(sockaddr)
-            return sock
-
-        urllib3_conn.create_connection = patched_create
+        _local.source_params = (self.source_ip, self.source_port, self._use_v6)
         try:
-            result = super().send(request, **kwargs)
+            return super().send(request, **kwargs)
         finally:
-            urllib3_conn.create_connection = old_create
-        return result
+          
+            try:
+                del _local.source_params
+            except AttributeError:
+                pass
 
 
 # ============================================================

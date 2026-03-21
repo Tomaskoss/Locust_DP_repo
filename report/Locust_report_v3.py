@@ -336,8 +336,8 @@ def add_network_traffic_charts(network_file, history_file, story,
         print(f"Network file '{network_file}' not found, charts skipped")
         return
     try:
-        network_df = pd.read_csv(network_file)
-        network_df = network_df[network_df['timestamp'] > 1_000_000_000].copy()  
+        network_df = pd.read_csv(network_file, on_bad_lines='skip')
+        network_df = network_df[network_df['timestamp'] > 1_000_000_000].copy()
         network_df['timestamp'] = pd.to_datetime(network_df['timestamp'], unit='s')
 
         unreachable_ts = []
@@ -356,6 +356,10 @@ def add_network_traffic_charts(network_file, history_file, story,
         p4    = os.path.join(REPORT_DIR, "chart_network_total.png")
         rx_mb = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / (1024 * 1024)
         tx_mb = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / (1024 * 1024)
+        
+        rx_mb = rx_mb.clip(lower=0)
+        tx_mb = tx_mb.clip(lower=0)
+
         fig, ax1 = plt.subplots(figsize=(7, 3))
         ax1.fill_between(network_df['timestamp'], rx_mb, alpha=0.12, color="#1A73E8")
         ax1.plot(network_df['timestamp'], rx_mb,
@@ -395,13 +399,18 @@ def add_network_traffic_charts(network_file, history_file, story,
         story.append(Image(p5, width=440, height=190))
         story.append(Spacer(1, 12))
 
-        rx_kb  = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / 1024
-        tx_kb  = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / 1024
+        rx_kb = ((network_df["rx_total"] - network_df["rx_total"].iloc[0]) / 1024).clip(lower=0)
+        tx_kb = ((network_df["tx_total"] - network_df["tx_total"].iloc[0]) / 1024).clip(lower=0)
         rx_kb  = rx_kb.iloc[1:]
         tx_kb  = tx_kb.iloc[1:]
-        rxs_nz = network_df[network_df['rx_kbps'] > 0]['rx_kbps']
-        txs_nz = network_df[network_df['tx_kbps'] > 0]['tx_kbps']
+        rx_kb = rx_kb[rx_kb > 0]
+        tx_kb = tx_kb[tx_kb > 0]
+        # threshold = napr. 1 kB/s (HTTP response je vždy väčší)
+        TRANSFER_THRESHOLD_rxs = 1.0  # kB/s
+        TRANSFER_THRESHOLD_txs = 1.0  # kB/s
 
+        rxs_nz = network_df[network_df['rx_kbps'] > TRANSFER_THRESHOLD_rxs]['rx_kbps']
+        txs_nz = network_df[network_df['tx_kbps'] > TRANSFER_THRESHOLD_txs]['tx_kbps']
         def _stat(s):
             return (
                 s.min()  if len(s) > 0 else 0,
@@ -739,7 +748,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     pdf.build(story, onFirstPage=_page_template, onLaterPages=_page_template)
 
     for f in ["chart_pie.png", "chart_rps_failures.png", "chart_response_times.png",
-              "chart_users.png", "chart_network_total.png", "chart_network_speed.png"]:
+              "chart_users.png", "chart_network_total.png", "chart_network_speed.png", "topology_diagram.png"]:
         full_path = os.path.join(REPORT_DIR, f)
         if os.path.exists(full_path):
             os.remove(full_path)

@@ -3,34 +3,36 @@ import threading
 import csv
 import os
 
+
 class NetworkMonitor:
+
     def __init__(self, interface="ens33", interval=1, output_file="network_usage.csv"):
         self.interface   = interface
         self.interval    = interval
         self.output_file = output_file
+        self._stop_event = threading.Event()   # FIX #1 — thread-safe stop flag
         self.running     = False
         self.thread      = None
 
-    def _read_net_dev(self):
+    def read_net_dev(self):
         """Prečíta RX/TX bajty pre zadané rozhranie z /proc/net/dev."""
         try:
             with open("/proc/net/dev", "r") as f:
                 for line in f:
-                    # OPRAVA: strip() + startswith() zabráni falošnému matchovaniu
-                    # napr. "ens3:" by chybne matchovalo aj riadok "ens33:"
-                    if line.strip().startswith(self.interface + ":"):
+    
+                    iface = line.split(":")[0].strip()
+                    if iface == self.interface:
                         parts    = line.split(":")[1].split()
-                        rx_total = int(parts[0])   # Stĺpec 1  = prijaté bajty (RX)
-                        tx_total = int(parts[8])   # Stĺpec 9  = odoslané bajty (TX)
+                        rx_total = int(parts[0])
+                        tx_total = int(parts[8])
                         return rx_total, tx_total
         except (FileNotFoundError, IndexError, ValueError) as e:
             print(f"Error reading network stats: {e}")
         return None, None
 
     def verify_interface(self):
-        """Overí, či zadané rozhranie existuje na tomto systéme."""
-        rx, tx = self._read_net_dev()
-        return rx is not None
+        """FIX #7 — verifikácia cez /sys/class/net (rýchlejšie, presnejšie)."""
+        return os.path.exists(f"/sys/class/net/{self.interface}")
 
     def list_interfaces(self):
         """Vráti zoznam všetkých dostupných sieťových rozhraní."""
@@ -40,69 +42,82 @@ class NetworkMonitor:
                 for line in f:
                     if ":" in line and not line.strip().startswith("Inter"):
                         iface = line.split(":")[0].strip()
-                        interfaces.append(iface)
+                        if iface:
+                            interfaces.append(iface)
         except Exception as e:
             print(f"Error listing interfaces: {e}")
         return interfaces
 
-    def _monitor_loop(self):
-        """Hlavná monitorovacia slučka – beží v samostatnom vlákne."""
-        prev_rx, prev_tx = self._read_net_dev()
+    def monitor_loop(self):
+        """Hlavná monitorovacia slučka beží v samostatnom vlákne."""
+        prev_rx, prev_tx = self.read_net_dev()
         if prev_rx is None:
             print(f"Interface {self.interface} not found.")
+            self.running = False
             return
+
+        flush_counter = 0
 
         try:
             with open(self.output_file, "w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(["timestamp", "rx_total", "tx_total", "rx_kbps", "tx_kbps"])
+                writer.writerow(["timestamp", "rx_total", "tx_total",
+                                 "rx_kbps", "tx_kbps"])
                 writer.writerow([int(time.time()), prev_rx, prev_tx, 0.0, 0.0])
                 csvfile.flush()
 
-                while self.running:
-                    t_before = time.time()
-                    time.sleep(self.interval)
-                    actual_elapsed = time.time() - t_before  # skutočný interval
+                while not self._stop_event.is_set():
+                    # FIX #1 + #2 — okamžitá reakcia na stop(), bez čakania celý interval
+                    if self._stop_event.wait(timeout=self.interval):
+                        break
 
-                    rx_total, tx_total = self._read_net_dev()
+                    rx_total, tx_total = self.read_net_dev()
+                    actual_elapsed     = self.interval   # čas merania = interval
+
+                    # FIX #4 — reset prev pri zlyhaní, zabráni spike v dátach
                     if rx_total is None:
+                        prev_rx, prev_tx = None, None
                         continue
 
-                    rx_diff = max(0, rx_total - prev_rx)
-                    tx_diff = max(0, tx_total - prev_tx)
+                    if prev_rx is None:
+                        prev_rx, prev_tx = rx_total, tx_total
+                        continue
+
+                    # FIX #6 — counter overflow (uint64 wrap-around)
+                    rx_diff = rx_total if rx_total < prev_rx else rx_total - prev_rx
+                    tx_diff = tx_total if tx_total < prev_tx else tx_total - prev_tx
+
+                    # FIX #5 — zabraňuje ZeroDivisionError pri jitter / malý interval
+                    actual_elapsed = max(1e-6, actual_elapsed)
 
                     rx_kBps = rx_diff / 1024 / actual_elapsed
                     tx_kBps = tx_diff / 1024 / actual_elapsed
 
                     prev_rx, prev_tx = rx_total, tx_total
 
-                    writer.writerow([
-                        int(time.time()),
-                        rx_total,
-                        tx_total,
-                        round(rx_kBps, 3),
-                        round(tx_kBps, 3)
-                    ])
-                    csvfile.flush()
+                    writer.writerow([int(time.time()), rx_total, tx_total,
+                                     round(rx_kBps, 3), round(tx_kBps, 3)])
 
+                csvfile.flush()  
         except Exception as e:
             print(f"Error in monitoring loop: {e}")
+            self.running = False
 
     def start(self):
         """Spustí monitoring v daemonickom vlákne na pozadí."""
         if self.running:
             print("Network monitoring is already running.")
             return
-
         if not self.verify_interface():
-            print(f"Error: Interface '{self.interface}' not found!")
+            print(f"Error: Interface {self.interface} not found!")
             print("Available interfaces:")
             for iface in self.list_interfaces():
                 print(f"  - {iface}")
             return
 
+        self._stop_event.clear()   # FIX #1 — reset eventu pred každým štartom
         self.running = True
-        self.thread  = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.thread  = threading.Thread(target=self.monitor_loop, daemon=True)
         self.thread.start()
         print(f"Network monitoring started on {self.interface}...")
 
@@ -113,20 +128,28 @@ class NetworkMonitor:
             return
 
         self.running = False
+        self._stop_event.set()   # FIX #1 — signalizuj vláknu okamžité ukončenie
+
         if self.thread:
             self.thread.join(timeout=5)
-        print(f"Network monitoring stopped. CSV saved to {self.output_file}")
+            # FIX #8 — over, či vlákno skutočne skončilo
+            if self.thread.is_alive():
+                print("WARNING: monitoring thread did not stop within 5s — "
+                      "CSV may be incomplete.")
+            else:
+                print(f"Network monitoring stopped. "
+                      f"CSV saved to {self.output_file}")
 
 
 if __name__ == "__main__":
-    _out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "network_usage.csv")
-    monitor = NetworkMonitor(interface="ens33", interval=1, output_file=_out)
-
+    out     = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "network_usage.csv")
+    monitor = NetworkMonitor(interface="ens33", interval=1, output_file=out)
     try:
         monitor.start()
         time.sleep(10)
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
+        print("Stopped by user.")
     finally:
         monitor.stop()
 
