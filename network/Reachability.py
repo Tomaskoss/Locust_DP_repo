@@ -53,8 +53,7 @@ class SourceIPAdapter(HTTPAdapter):
         self._use_v6   = is_ipv6(source_ip)
         super().__init__(**kwargs)
 
-    def _source_address(self):
-        return (self.source_ip, 0, 0, 0) if self._use_v6 else (self.source_ip, 0)
+    
 
     def init_poolmanager(self, *args, **kwargs):
         kwargs["source_address"] = (self.source_ip, 0)

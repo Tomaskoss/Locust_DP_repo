@@ -11,6 +11,7 @@ import queue
 import socket
 import pandas as pd
 import csv
+import glob
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 
@@ -532,12 +533,14 @@ class LocustGUI(ctk.CTk):
     # PAGE – CONFIG
     # ================================================================
 
-        # ================================================================
-    # PAGE – CONFIG
-    # ================================================================
-
     def _build_page_config(self, parent):
-        scroll = make_scroll_frame(parent)
+        outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_columnconfigure(0, weight=1)
+        outer.grid_rowconfigure(0, weight=1)   
+        outer.grid_rowconfigure(1, weight=0)   
+
+        scroll = make_scroll_frame(outer)
         scroll.grid(row=0, column=0, sticky="nsew")
         scroll.grid_columnconfigure(0, weight=1)
 
@@ -674,37 +677,36 @@ class LocustGUI(ctk.CTk):
             os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33")
         )
 
-        # ── Actions ───────────────────────────────────────────────
-        row = self._card_header(scroll, "Actions", row)
-        bf = ctk.CTkFrame(scroll, fg_color="transparent")
-        bf.grid(row=row, column=0, padx=16, pady=(4,16), sticky="ew")
-        bf.grid_columnconfigure((0,1), weight=1)
-        row += 1
+    # ── Actions —  ──────────────────
+        bf = ctk.CTkFrame(outer, fg_color="transparent")
+        bf.grid(row=1, column=0, padx=16, pady=(4, 16), sticky="ew")
+        bf.grid_columnconfigure((0, 1), weight=1)
 
         for col, (icon, label, sub, cmd, color) in enumerate([
             ("⚙", "Setup",   "IP Pool + Topology", self.setup_env, C_BLUE),
             ("🗑", "Cleanup", "Remove IP Pool",      self.cleanup,   C_DANGER),
         ]):
             card_btn = ctk.CTkFrame(bf, fg_color=color, corner_radius=10, cursor="hand2")
-            card_btn.grid(row=0, column=col, padx=(0 if col==0 else 8, 8 if col==0 else 0),
+            card_btn.grid(row=0, column=col,
+                          padx=(0 if col == 0 else 8, 8 if col == 0 else 0),
                           pady=4, sticky="ew")
             card_btn.grid_columnconfigure(1, weight=1)
 
             ctk.CTkLabel(card_btn, text=icon, font=ctk.CTkFont(size=26),
                          fg_color="transparent", text_color="white", cursor="hand2"
-                         ).grid(row=0, column=0, rowspan=2, padx=(14,8), pady=12, sticky="w")
+                         ).grid(row=0, column=0, rowspan=2, padx=(14, 8), pady=12, sticky="w")
             ctk.CTkLabel(card_btn, text=label,
                          font=ctk.CTkFont(size=13, weight="bold"),
                          fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
-                         ).grid(row=0, column=1, padx=(0,12), pady=(10,0), sticky="w")
+                         ).grid(row=0, column=1, padx=(0, 12), pady=(10, 0), sticky="w")
             ctk.CTkLabel(card_btn, text=sub,
                          font=ctk.CTkFont(size=10),
                          fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
-                         ).grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
+                         ).grid(row=1, column=1, padx=(0, 12), pady=(0, 10), sticky="w")
 
             self.after(50, lambda cb=card_btn, c=cmd, cl=color: bind_card(cb, c, darken(cl, 25), cl))
 
-        return scroll
+        return outer 
 
 
     # ================================================================
@@ -894,8 +896,15 @@ class LocustGUI(ctk.CTk):
                                       fg_color=C_ENTRY)
         self.cert_pass.grid(row=1, column=1, columnspan=2, padx=(0,16), pady=(0,12), sticky="ew")
 
-        gen_card = ctk.CTkFrame(outer, fg_color=C_PURPLE, corner_radius=10, cursor="hand2")
-        gen_card.grid(row=1, column=0, padx=16, pady=(12,16), sticky="ew")
+         # ── Buttons row ────────────────────────────────────────
+        btn_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        btn_frame.grid(row=1, column=0, padx=16, pady=(12, 16), sticky="ew")
+        btn_frame.grid_columnconfigure(0, weight=1)
+        btn_frame.grid_columnconfigure(1, weight=1)
+
+        # Generate Report
+        gen_card = ctk.CTkFrame(btn_frame, fg_color=C_PURPLE, corner_radius=10, cursor="hand2")
+        gen_card.grid(row=0, column=0, padx=(0, 8), pady=4, sticky="ew")
         gen_card.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(gen_card, text="📄", font=ctk.CTkFont(size=26),
                      fg_color="transparent", text_color="white", cursor="hand2"
@@ -909,6 +918,23 @@ class LocustGUI(ctk.CTk):
                      fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
                      ).grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
         self.after(50, lambda: bind_card(gen_card, self.generate_report, darken(C_PURPLE, 25), C_PURPLE))
+
+        # Delete Data
+        del_card = ctk.CTkFrame(btn_frame, fg_color=C_DANGER, corner_radius=10, cursor="hand2")
+        del_card.grid(row=0, column=1, padx=(8, 0), pady=4, sticky="ew")
+        del_card.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(del_card, text="🗑", font=ctk.CTkFont(size=26),
+                     fg_color="transparent", text_color="white", cursor="hand2"
+                     ).grid(row=0, column=0, rowspan=2, padx=(14,8), pady=12, sticky="w")
+        ctk.CTkLabel(del_card, text="Delete Data",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
+                     ).grid(row=0, column=1, padx=(0,12), pady=(10,0), sticky="w")
+        ctk.CTkLabel(del_card, text="Clear CSV & IP pool",
+                     font=ctk.CTkFont(size=10),
+                     fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
+                     ).grid(row=1, column=1, padx=(0,12), pady=(0,10), sticky="w")
+        self.after(50, lambda: bind_card(del_card, self._delete_data, darken(C_DANGER, 25), C_DANGER))
 
         return outer
 
@@ -954,6 +980,36 @@ class LocustGUI(ctk.CTk):
             text_color=C_MUTED
         )
         self.write_log("↩ Locustfile reset to default")
+    def _delete_data(self):
+    
+        deleted = []
+        errors  = []
+
+        # Všetky CSV v /data
+        for f in glob.glob(os.path.join(DATA_DIR, "*.csv")):
+            try:
+                os.remove(f)
+                deleted.append(os.path.basename(f))
+            except Exception as e:
+                errors.append(f"{os.path.basename(f)}: {e}")
+
+        # ip_pool.txt a test_config.csv v BASE_DIR
+        for fname in ["ip_pool.txt", "test_config.csv"]:
+            fpath = os.path.join(BASE_DIR, fname)
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    deleted.append(fname)
+                except Exception as e:
+                    errors.append(f"{fname}: {e}")
+
+        if deleted:
+            self.write_log(f"🗑 Deleted: {', '.join(deleted)}")
+        if errors:
+            self.write_log(f"⚠ Errors: {', '.join(errors)}")
+        if not deleted and not errors:
+            self.write_log("ℹ No data files found to delete")
+
 
     # ================================================================
     # LOG
