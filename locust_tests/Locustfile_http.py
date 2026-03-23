@@ -23,7 +23,7 @@ PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
 NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
 
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"))
 
 
 
@@ -195,11 +195,6 @@ def on_locust_init(environment, **kwargs):
     if isinstance(environment.runner, WorkerRunner):
         print("This is a worker process - network monitoring disabled")
         return
-    interface       = os.getenv("INTERFACE") or detect_network_interface()
-    network_monitor = NetworkMonitor(interface=interface, interval=1,
-                                     output_file=NETWORK_FILE)
-    print(f"Network monitor initialized for interface: {interface}")
-
 
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):
@@ -210,58 +205,65 @@ def on_test_start(environment, **kwargs):
     start_time  = datetime.now()
     target_host = environment.host or "Unknown"
 
+    #  Skús načítať z test_config.csv (vytvorí GUI)
+    target_ip = None
     try:
-        clean_host = (
-            target_host
-            .replace("https://", "")
-            .replace("http://",  "")
-            .split("/")[0]
-        )
-        if clean_host.startswith("["):
-            clean_host = clean_host.split("]")[0].lstrip("[")
-        else:
-            clean_host = clean_host.split(":")[0]
+        cfg = pd.read_csv(os.path.join(BASE_DIR, "test_config.csv")).iloc[0]
+        target_ip = str(cfg.get("target_ip", "")).strip()
+        if target_ip:
+            print(f"Target is {'IPv6' if is_ipv6(target_ip) else 'IPv4'} address: {target_ip}")
+    except Exception:
+        pass
 
+    #  Fallback — resolvuj sám podľa IP_VERSION z config.env
+    if not target_ip:
         try:
-            socket.inet_pton(socket.AF_INET6, clean_host)
-            target_ip = clean_host
-            print(f"Target is IPv6 address: {target_ip}")
-        except OSError:
+            clean_host = (
+                target_host
+                .replace("https://", "")
+                .replace("http://",  "")
+                .split("/")[0]
+            )
+            if clean_host.startswith("["):
+                clean_host = clean_host.split("]")[0].lstrip("[")
+            else:
+                clean_host = clean_host.split(":")[0]
+
             try:
-                socket.inet_pton(socket.AF_INET, clean_host)
+                socket.inet_pton(socket.AF_INET6, clean_host)
                 target_ip = clean_host
-                print(f"Target is IPv4 address: {target_ip}")
+                print(f"Target is IPv6 address: {target_ip}")
             except OSError:
                 try:
-                    infos     = socket.getaddrinfo(clean_host, None, socket.AF_INET6)
-                    target_ip = infos[0][4][0]
-                    print(f"Resolved {clean_host} → {target_ip} (IPv6)")
-                except socket.gaierror:
-                    target_ip = socket.gethostbyname(clean_host)
-                    print(f"Resolved {clean_host} → {target_ip} (IPv4)")
-
-    except Exception as e:
-        print(f"Warning: Could not resolve hostname: {e}")
-        target_ip = "Unknown"
+                    socket.inet_pton(socket.AF_INET, clean_host)
+                    target_ip = clean_host
+                    print(f"Target is IPv4 address: {target_ip}")
+                except OSError:
+                    ip_version = os.getenv("IP_VERSION", "ipv4").lower()
+                    af = socket.AF_INET6 if ip_version == "ipv6" else socket.AF_INET
+                    try:
+                        infos = socket.getaddrinfo(clean_host, None, af)
+                        target_ip = infos[0][4][0]
+                        label = "IPv6" if af == socket.AF_INET6 else "IPv4"
+                        print(f"Resolved {clean_host} → {target_ip} ({label})")
+                    except Exception:
+                        target_ip = socket.gethostbyname(clean_host)
+                        print(f"Resolved {clean_host} → {target_ip} (IPv4 fallback)")
+        except Exception as e:
+            print(f"Warning: Could not resolve hostname: {e}")
+            target_ip = "Unknown"
 
     print(f"\n{'='*50}")
     print(f"Test started at: {start_time}")
     print(f"Target: {target_host} ({target_ip})")
     print(f"{'='*50}\n")
 
-    if network_monitor:
-        network_monitor.start()
-
-
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
     global start_time, target_host, target_ip
     if isinstance(environment.runner, WorkerRunner):
         return
-
-    if network_monitor:
-        network_monitor.stop()
-
+        
     end_time = datetime.now()
     duration = end_time - start_time if start_time else "Unknown"
 
@@ -274,13 +276,23 @@ def on_test_stop(environment, **kwargs):
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(METADATA_FILE, "w", newline="") as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(["start_time", "end_time", "duration",
-                             "test_type", "target_host", "target_ip"])
-            writer.writerow([start_time, end_time, str(duration),
-                             TEST_TYPE, environment.host, target_ip])
+            ip_version = os.getenv("IP_VERSION", "ipv4").lower()
+
+            if ip_version == "ipv6":
+                if os.getenv("IPV6_MODE", "range").lower() == "prefix":
+                    used_ips_val = os.getenv("IP6_PREFIX", "Unknown")
+                else:
+                    used_ips_val = os.getenv("IP6_START", "") + " - " + os.getenv("IP6_END", "")
+            else:
+                used_ips_val = os.getenv("IP_START", "") + " - " + os.getenv("IP_END", "")
+            writer.writerow(["start_time", "end_time", "duration", "test_type",
+                             "target_host", "target_ip", "used_ips"])
+            writer.writerow([start_time, end_time, str(duration), TEST_TYPE,
+                             environment.host, target_ip, used_ips_val])
         print(f"Metadata saved to {METADATA_FILE}")
     except Exception as e:
         print(f"Failed to save metadata: {e}")
+
 
 
 # ============================================================

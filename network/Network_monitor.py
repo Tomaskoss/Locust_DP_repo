@@ -10,7 +10,7 @@ class NetworkMonitor:
         self.interface   = interface
         self.interval    = interval
         self.output_file = output_file
-        self._stop_event = threading.Event()   # FIX #1 — thread-safe stop flag
+        self._stop_event = threading.Event()   #  — thread-safe stop flag
         self.running     = False
         self.thread      = None
 
@@ -31,7 +31,7 @@ class NetworkMonitor:
         return None, None
 
     def verify_interface(self):
-        """FIX #7 — verifikácia cez /sys/class/net (rýchlejšie, presnejšie)."""
+        #verifikácia cez /sys/class/net (rýchlejšie, presnejšie).
         return os.path.exists(f"/sys/class/net/{self.interface}")
 
     def list_interfaces(self):
@@ -67,14 +67,14 @@ class NetworkMonitor:
                 csvfile.flush()
 
                 while not self._stop_event.is_set():
-                    # FIX #1 + #2 — okamžitá reakcia na stop(), bez čakania celý interval
+                    # — okamžitá reakcia na stop(), bez čakania celý interval
                     if self._stop_event.wait(timeout=self.interval):
                         break
 
                     rx_total, tx_total = self.read_net_dev()
                     actual_elapsed     = self.interval   # čas merania = interval
 
-                    # FIX #4 — reset prev pri zlyhaní, zabráni spike v dátach
+                    #  — reset prev pri zlyhaní, zabráni spike v dátach
                     if rx_total is None:
                         prev_rx, prev_tx = None, None
                         continue
@@ -83,11 +83,11 @@ class NetworkMonitor:
                         prev_rx, prev_tx = rx_total, tx_total
                         continue
 
-                    # FIX #6 — counter overflow (uint64 wrap-around)
+                    #  — counter overflow (uint64 wrap-around)
                     rx_diff = rx_total if rx_total < prev_rx else rx_total - prev_rx
                     tx_diff = tx_total if tx_total < prev_tx else tx_total - prev_tx
 
-                    # FIX #5 — zabraňuje ZeroDivisionError pri jitter / malý interval
+                    #  zabraňuje ZeroDivisionError pri jitter / malý interval
                     actual_elapsed = max(1e-6, actual_elapsed)
 
                     rx_kBps = rx_diff / 1024 / actual_elapsed
@@ -115,7 +115,7 @@ class NetworkMonitor:
                 print(f"  - {iface}")
             return
 
-        self._stop_event.clear()   # FIX #1 — reset eventu pred každým štartom
+        self._stop_event.clear()   # reset eventu pred každým štartom
         self.running = True
         self.thread  = threading.Thread(target=self.monitor_loop, daemon=True)
         self.thread.start()
@@ -128,11 +128,11 @@ class NetworkMonitor:
             return
 
         self.running = False
-        self._stop_event.set()   # FIX #1 — signalizuj vláknu okamžité ukončenie
+        self._stop_event.set()   #  signalizuj vláknu okamžité ukončenie
 
         if self.thread:
             self.thread.join(timeout=5)
-            # FIX #8 — over, či vlákno skutočne skončilo
+            # over, či vlákno skutočne skončilo
             if self.thread.is_alive():
                 print("WARNING: monitoring thread did not stop within 5s — "
                       "CSV may be incomplete.")

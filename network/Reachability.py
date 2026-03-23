@@ -11,12 +11,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 CSV_FILE = os.path.join(DATA_DIR, "reachability.csv")
 
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"))
 
 SOURCE_IP = os.getenv("REACH_SRC_IP",    "10.10.10.20")
 URL       = os.getenv("TARGET_HOST",     "https://www.vut.cz")
 INTERVAL  = int(os.getenv("REACH_INTERVAL", 5))
-DURATION  = int(os.getenv("RUNTIME",       10))
+DURATION  = int(os.getenv("RUN_TIME", 10))
 TIMEOUT   = int(os.getenv("REACH_TIMEOUT",  5))   
 
 
@@ -57,11 +57,11 @@ class SourceIPAdapter(HTTPAdapter):
         return (self.source_ip, 0, 0, 0) if self._use_v6 else (self.source_ip, 0)
 
     def init_poolmanager(self, *args, **kwargs):
-        kwargs["source_address"] = self._source_address()
+        kwargs["source_address"] = (self.source_ip, 0)
         return super().init_poolmanager(*args, **kwargs)
 
     def proxy_manager_for(self, proxy, **proxy_kwargs):
-        proxy_kwargs["source_address"] = self._source_address()
+        proxy_kwargs["source_address"] = (self.source_ip, 0)
         return super().proxy_manager_for(proxy, **proxy_kwargs)
 
 
@@ -92,7 +92,9 @@ def run(source_ip=SOURCE_IP, url=URL, interval=INTERVAL,
     session.mount("http://",  adapter)
     session.mount("https://", adapter)
 
-    os.makedirs(os.path.dirname(csv_file), exist_ok=True)
+    dir_path = os.path.dirname(csv_file)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
 
     ip_ver = "IPv6" if is_ipv6(source_ip) else "IPv4"
     print(f"Reachability check | src: {source_ip} ({ip_ver}) -> {url}")

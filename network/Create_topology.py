@@ -12,14 +12,14 @@ def _format_source_ip(source_ip):
                              - fd00::40
     192.168.10.10-40     →  192.168.10.10-40  (nezmenené)
     """
-    # IPv6 range obsahuje " - " (medzery)
+   
     if " - " in source_ip:
         parts = source_ip.split(" - ", 1)
         return parts[0] + "\n- " + parts[1]
-    # IPv6 prefix fd00::/64 — ponecháme as-is
+   
     if ":" in source_ip and "/" in source_ip:
         return source_ip
-    # IPv4 — nezmenené
+
     return source_ip
 
 
@@ -31,7 +31,8 @@ def create_topology_diagram(
     target_ip   = "142.251.36.110",
     source_ip   = "192.168.10.10-40",
     interface   = "ens33",
-    output_file = "topology_diagram.png"
+    output_file = "topology_diagram.png",
+    reach_src_ip= None
 ):
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.set_xlim(0, 10)
@@ -116,19 +117,26 @@ def create_topology_diagram(
                     fontsize=10, fontweight='bold', color='#cc7700', zorder=7)
 
     # Attack side info
-    src_label    = _format_source_ip(source_ip)
-    src_fontsize = 10 if _is_ipv6_source(source_ip) else 16
+
+    src_label = _format_source_ip(source_ip)
+    base_font = 10 if _is_ipv6_source(source_ip) else 13
 
     ax.text(attack_x, info_y,        f'Interface: {interface}',
-            ha='center', va='top', fontsize=16, fontstyle='italic')
+            ha='center', va='top', fontsize=base_font, fontstyle='italic')
     ax.text(attack_x, info_y - 0.30, 'IP source:',
-            ha='center', va='top', fontsize=16, fontstyle='italic')
+            ha='center', va='top', fontsize=base_font, fontstyle='italic')
     ax.text(attack_x, info_y - 0.60, src_label,
-            ha='center', va='top', fontsize=src_fontsize, fontweight='bold')
+            ha='center', va='top', fontsize=base_font, fontweight='bold')
 
     # Reachability side info
     ax.text(reach_x, info_y, f'Interface: {interface}',
-            ha='center', va='top', fontsize=16, fontstyle='italic')
+            ha='center', va='top', fontsize=base_font, fontstyle='italic')
+    
+    if reach_src_ip:
+        ax.text(reach_x, info_y - 0.30, 'IP source:',
+                ha='center', va='top', fontsize=base_font, fontstyle='italic')
+        ax.text(reach_x, info_y - 0.60, reach_src_ip,
+                ha='center', va='top', fontsize=base_font, fontweight='bold')
 
     # ── Šípky k cloudu ────────────────────────────────────────────
     arrow_props = dict(arrowstyle='->', lw=3, color='black',
@@ -161,11 +169,11 @@ def create_topology_diagram(
 #  INTEGRATION — PDF report
 # ============================================================
 
-def add_topology_to_report(story, styles, target_ip, source_ip, interface="ens33"):
+def add_topology_to_report(story, styles, target_ip, source_ip, interface="ens33", reach_src_ip=None):
     from reportlab.platypus import Image, Paragraph, Spacer
 
-    topology_file = "topology_diagram.png"
-    create_topology_diagram(target_ip, source_ip, interface, topology_file)
+    topology_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "topology_diagram.png")
+    create_topology_diagram(target_ip, source_ip, interface, topology_file, reach_src_ip)
 
     story.append(Paragraph("<b>Network Topology</b>", styles["Heading1"]))
     story.append(Spacer(1, 12))

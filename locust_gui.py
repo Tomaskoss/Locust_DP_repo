@@ -7,14 +7,11 @@ import threading
 import sys
 import os
 import time
-import csv
 import queue
 import socket
-import random
-import requests
 import pandas as pd
-from requests.adapters import HTTPAdapter
-import urllib3.util.connection as urllib3_conn
+import csv
+from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 
 ctk.set_appearance_mode("dark")
@@ -31,6 +28,7 @@ from Locust_report_v3       import create_pdf_report
 from Create_IP_Pool_skript  import main as create_pool
 from Remove_IP_Pool_skript  import main as remove_pool
 from Network_monitor        import NetworkMonitor
+from Reachability           import run as run_reachability_check
 
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.join(BASE_DIR, "report")
@@ -220,6 +218,8 @@ class LocustGUI(ctk.CTk):
         apply_theme(initial_theme)
         self._current_theme = initial_theme
         self._network_monitor = None
+        self._reach_stop_event = threading.Event()
+
 
         self.title("Locust Test GUI")
         self.geometry("1100x800")
@@ -303,6 +303,13 @@ class LocustGUI(ctk.CTk):
                 else:
                     widget.delete(0, "end")
                     widget.insert(0, value)
+        # ── Obnov IPv6 mode radio button ──────────────────────────
+        self.ipv6_mode.set(os.getenv("IPV6_MODE", "range"))
+        self._on_ipv6_mode_change()
+
+        # ── Obnov aktívny tab (IPv4 / IPv6) ───────────────────────
+        if os.getenv("IP_VERSION", "ipv4") == "ipv6":
+            self.ip_tab.set("IPv6")
 
     def _save_env_from_gui(self):
         env_path = os.path.join(BASE_DIR, "config.env")
@@ -311,8 +318,8 @@ class LocustGUI(ctk.CTk):
             "INTERFACE":       self.get("interface"),
             "TEST_TYPE":       self.get("test_type"),
             "IP_VERSION":      self._active_ip_version(),
-            "IP_START":        self._get_ip_start(),
-            "IP_END":          self._get_ip_end(),\
+            "IP_START":  self.entries["ip_start"].get().strip(),
+            "IP_END":    self.entries["ip_end"].get().strip(),
             "IPV4PREFIX":      self.entries["ipv4prefix"].get(),
             "IP6_START":       self.entries["ip6_start"].get().strip(),
             "IP6_END":         self.entries["ip6_end"].get().strip(),
@@ -1258,7 +1265,7 @@ class LocustGUI(ctk.CTk):
         return None
 
     def _get_target_clean(self):
-        return (self.get("target").replace("https://","").replace("http://","").split("/")[0])
+        return urlparse(self.get("target")).hostname or self.get("target")
 
     def _get_source_range(self):
         start = self._get_ip_start()
@@ -1408,7 +1415,9 @@ class LocustGUI(ctk.CTk):
             create_topology_diagram(target_ip=self._get_target_clean(),
                                     source_ip=self._get_source_range(),
                                     interface=self.get("interface"),
-                                    output_file=os.path.join(REPORT_DIR, "topology_diagram.png"))
+                                    output_file=os.path.join(REPORT_DIR, "topology_diagram.png"),
+                                    reach_src_ip = self.get("reach_src_ip") or self._get_ip_start(),
+                                    )
             self.write_log("✓ Topology diagram generated")
             self.write_log("✓ SETUP COMPLETE")
             self.write_log("=" * 60)
@@ -1506,64 +1515,21 @@ class LocustGUI(ctk.CTk):
         if self.locust_process and self.locust_process.poll() is None:
             self.locust_process.terminate()
             self.write_log("⛔ Locust test stopped by user")
+            self._reach_stop_event.set()
         self._run_card.configure(fg_color=C_SUCCESS, cursor="hand2")
         self._set_stop_enabled(False)
 
     def _run_reachability(self, duration, interval):
-        src_ip = self.get("reach_src_ip") or self._get_ip_start()
-        use_v6 = is_ipv6(src_ip)
-
-        class SourceIPAdapter(HTTPAdapter):
-            def __init__(self, source_ip, source_port=0, **kwargs):
-                self.source_ip = source_ip; self.source_port = source_port
-                super().__init__(**kwargs)
-            def init_poolmanager(self, *args, **kwargs):
-                kwargs["source_address"] = (self.source_ip, self.source_port)
-                super().init_poolmanager(*args, **kwargs)
-            def send(self, request, **kwargs):
-                old = urllib3_conn.create_connection
-                sip, sport, v6 = self.source_ip, self.source_port, use_v6
-                def patched(address, timeout=None, source_address=None, socket_options=None):
-                    host, port = address
-                    af = socket.AF_INET6 if v6 else socket.AF_INET
-                    af, st, proto, _, sa = socket.getaddrinfo(host, port, af, socket.SOCK_STREAM)[0]
-                    s = socket.socket(af, st, proto)
-                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    if socket_options:
-                        for opt in socket_options: s.setsockopt(*opt)
-                    s.bind((sip, sport, 0, 0) if v6 else (sip, sport))
-                    s.settimeout(timeout); s.connect(sa); return s
-                urllib3_conn.create_connection = patched
-                try:
-                    result = super().send(request, **kwargs)
-                finally:
-                    urllib3_conn.create_connection = old
-                return result
-
-        timeout_val = float(self.get("reach_timeout") or 5)
-        port_pool   = parse_ports(self.get("src_ports"))
-        src_port    = random.choice(port_pool) if port_pool else 0
-        self.write_log(f"[Reachability] src={src_ip}:{src_port or 'random'} | interval={interval}s")
-        session = requests.Session()
-        adapter = SourceIPAdapter(src_ip, source_port=src_port)
-        session.mount("http://", adapter); session.mount("https://", adapter)
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(os.path.join(DATA_DIR, "reachability.csv"), "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["timestamp","status_code","elapsed_time_s"])
-            start = time.time()
-            while time.time() - start < duration:
-                ts = time.strftime("%Y-%m-%d %H:%M:%S")
-                try:
-                    r = session.get(self.get("target"), timeout=timeout_val)
-                    writer.writerow([ts, r.status_code, r.elapsed.total_seconds()])
-                    self.write_log(f"[Reachability] {ts} → {r.status_code} ({r.elapsed.total_seconds():.3f}s)")
-                except Exception as ex:
-                    writer.writerow([ts, "FAIL", -1])
-                    self.write_log(f"[Reachability] {ts} → FAIL ({ex})")
-                f.flush()
-                time.sleep(interval)
-        self.write_log("✓ Reachability complete → data/reachability.csv")
+        self._reach_stop_event.clear()
+        run_reachability_check(
+            source_ip  = self.get("reach_src_ip") or self._get_ip_start(),  # ✅
+            url        = self.get("target"),
+            interval   = interval,
+            duration   = duration,
+            timeout    = float(self.get("reach_timeout") or 5),
+            csv_file   = os.path.join(DATA_DIR, "reachability.csv"),
+            stop_event = self._reach_stop_event,
+        )
 
     # ================================================================
     # REPORT
@@ -1588,16 +1554,22 @@ class LocustGUI(ctk.CTk):
             self.write_log("=" * 60)
             self.write_log("▶ Generating PDF report...")
             create_pdf_report(
-                stats_file=os.path.join(DATA_DIR, "report_stats.csv"),
-                history_file=os.path.join(DATA_DIR, "report_stats_history.csv"),
-                output_file=pdf_path,
-                meta_file=os.path.join(DATA_DIR, "report_metadata.csv"),
-                network_file=os.path.join(DATA_DIR, "network_usage.csv"),
-                comment=self.get_comment(), target_ip=target_ip,
-                source_ip=source_range, interface=interface,
-                reach_threshold=reach_threshold / 100, test_type=test_type_cfg,
-                src_ports=self.get("src_ports") or None,
-                sign=sign, p12_path=p12_path, p12_pass=p12_pass,
+                stats_file      = os.path.join(DATA_DIR, "report_stats.csv"),
+                history_file    = os.path.join(DATA_DIR, "report_stats_history.csv"),
+                output_file     = pdf_path,
+                meta_file       = os.path.join(DATA_DIR, "report_metadata.csv"),
+                network_file    = os.path.join(DATA_DIR, "network_usage.csv"),
+                comment         = self.get_comment(),
+                target_ip       = target_ip,
+                source_ip       = source_range,
+                interface       = interface,
+                reach_threshold = reach_threshold / 100,
+                test_type       = test_type_cfg,
+                src_ports       = self.get("src_ports") or None,
+                reach_src_ip    = self.get("reach_src_ip") or self._get_ip_start(), 
+                sign            = sign,
+                p12_path        = p12_path,
+                p12_pass        = p12_pass,
             )
             self.write_log(f"✓ {report_name} generated → {save_dir}")
             self.write_log("=" * 60)

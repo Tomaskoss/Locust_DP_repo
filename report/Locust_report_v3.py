@@ -31,18 +31,20 @@ NETWORK_FILE = os.path.join(DATA_DIR,   "network_usage.csv")
 META_FILE    = os.path.join(DATA_DIR,   "report_metadata.csv")
 PDF_FILE     = os.path.join(REPORT_DIR, "Locust_Report.pdf")
 
-# === COLOUR PALETTE ===
-C_PRIMARY      = colors.HexColor("#1A73E8")
-C_PRIMARY_DARK = colors.HexColor("#0D47A1")
-C_ACCENT       = colors.HexColor("#34A853")
-C_DANGER       = colors.HexColor("#B71C1C")
-C_SURFACE      = colors.HexColor("#F8F9FA")
-C_SURFACE2     = colors.HexColor("#E8EEF7")
-C_ROW_ALT      = colors.HexColor("#EEF3FB")
-C_TEXT         = colors.HexColor("#202124")
-C_TEXT_MUTED   = colors.HexColor("#5F6368")
+# Biele stránky — text musí byť tmavý
+C_TEXT       = colors.HexColor("#1a1a1a")   # tmavý text (čitateľný na bielom)
+C_TEXT_MUTED = colors.HexColor("#555555")   # tlmený tmavý text
+
+# Akcenty zostávajú z GUI témy
+C_PRIMARY      = colors.HexColor("#2a5f3a")
+C_PRIMARY_DARK = colors.HexColor("#1e4a2c")
+C_ACCENT       = colors.HexColor("#2a5f3a")
+C_DANGER       = colors.HexColor("#922b21")
+C_SURFACE      = colors.HexColor("#f5f5f5")   # svetlosivé pozadie kariet
+C_SURFACE2     = colors.HexColor("#ebebeb")
+C_ROW_ALT      = colors.HexColor("#f0f5f1")   # jemne zelenkastý riadok
+C_BORDER       = colors.HexColor("#cccccc")
 C_WHITE        = colors.white
-C_BORDER       = colors.HexColor("#DADCE0")
 
 PAGE_W, PAGE_H = A4
 MARGIN         = 18 * mm
@@ -127,7 +129,8 @@ def _page_template(canvas, doc):
 # ================================================================
 
 def generate_topology_diagram(target_ip=None, source_ip=None,
-                               interface=None, output_file=None):
+                                interface=None, output_file=None, 
+                                reach_src_ip=None):
     if output_file is None:
         output_file = os.path.join(REPORT_DIR, "topology_diagram.png")
     try:
@@ -137,7 +140,8 @@ def generate_topology_diagram(target_ip=None, source_ip=None,
             target_ip   = target_ip   or "Unknown",
             source_ip   = source_ip   or "Unknown",
             interface   = interface   or "ens33",
-            output_file = output_file
+            output_file = output_file,
+            reach_src_ip = reach_src_ip
         )
         print("✓ Topology diagram generated")
         return True
@@ -539,7 +543,7 @@ def create_pdf_report(stats_file, history_file, output_file,
                       meta_file=None, network_file=None, comment=None,
                       target_ip=None, source_ip=None, interface=None,
                       reach_threshold=0.5, test_type=None,
-                      src_ports=None,
+                      src_ports=None, reach_src_ip=None,
                       sign=False, p12_path=None, p12_pass=b"yourpassword"):
 
     if meta_file    is None: meta_file    = META_FILE
@@ -574,8 +578,10 @@ def create_pdf_report(stats_file, history_file, output_file,
     display_test_type  = test_type if (test_type and test_type.strip()) else test_type_meta
     duration           = compute_duration(start_time, end_time)
     resolved_target_ip = target_ip or target_ip_meta
-    if used_ips in ("Unknown", "", "nan", None) and source_ip:
+    if source_ip:
         used_ips = source_ip
+    elif used_ips in ("Unknown", "", "nan", None):
+        used_ips = "Unknown"
 
     ip_version = "IPv6" if (source_ip and ":" in source_ip) else "IPv4"
 
@@ -584,7 +590,8 @@ def create_pdf_report(stats_file, history_file, output_file,
         target_ip   = target_ip,
         source_ip   = source_ip,
         interface   = interface,
-        output_file = topology_output
+        output_file = topology_output,
+        reach_src_ip = reach_src_ip
     )
 
     pdf = SimpleDocTemplate(
