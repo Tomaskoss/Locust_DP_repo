@@ -1,4 +1,4 @@
-from locust import events, HttpUser, task, between
+from locust import events, HttpUser, task, between, LoadTestShape
 from locust.runners import WorkerRunner
 from datetime import datetime
 from dotenv import load_dotenv
@@ -9,6 +9,7 @@ import random
 import threading
 import time
 import sys
+import json
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
@@ -316,7 +317,29 @@ class SourceIPAdapter(HTTPAdapter):
                 del _local.source_params
             except AttributeError:
                 pass
+# ============================================================
+#  DYNAMIC SHAPE
+# ============================================================
 
+class DynamicShape(LoadTestShape):
+    _stages = None
+
+    def _load(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stages.json")
+        with open(path) as f:
+            self._stages = json.load(f)
+
+    def tick(self):
+        if self._stages is None:
+            try:
+                self._load()
+            except Exception:
+                return None
+        t = self.get_run_time()
+        for stage in self._stages:
+            if t < stage["duration"]:
+                return stage["users"], stage["spawn_rate"]
+        return None
 
 # ============================================================
 #  USER CLASS
