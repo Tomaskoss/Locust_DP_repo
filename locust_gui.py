@@ -751,42 +751,7 @@ class LocustGUI(ctk.CTk):
         scroll.grid_columnconfigure(0, weight=1)
 
         s_row = 0
-
-        # ── Locust Parameters ─────────────────────────────────────
-        s_row = self._card_header(scroll, "Locust Parameters", s_row)
-        card = self._card(scroll, s_row); s_row += 1
-        self._field_row(card, 0, "Stop timeout s", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
-        self._field_row(card, 0, "Processes", "processes", "-1", col=2, help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
-                # Wait Time card
-        s_row = self._card_header(scroll, "Wait Time", s_row)
-        card_wt = self._card(scroll, s_row); s_row += 1
-
-        self._combo_row(card_wt, 0, "Mode", "waitmode",
-            ["between", "constant", "constant_throughput"], "between",
-            help="between – random wait between Min and Max seconds\nconstant – fixed wait of Min seconds after each request\nconstant_throughput – maintain a fixed number of requests per second (Min = target RPS)")
-        self._field_row(card_wt, 1, "Min / Value s", "waitmin", "1", col=0, help="Minimum wait time in seconds (between mode),\nfixed wait time (constant mode),\nor target requests per second (constant_throughput mode).")
-
-        #  Max s manuálne aby sme mali referenciu na label ──
-        self.waitmax_label = ctk.CTkLabel(
-            card_wt, text="Max s",
-            font=ctk.CTkFont(size=15), text_color=C_LABEL,
-            anchor="w", width=self.LBL_W
-        )
-        self.waitmax_label.grid(row=1, column=2, padx=(16, 8), pady=10, sticky="w")
-        e = ctk.CTkEntry(card_wt, width=self.ENTR_W, fg_color=C_ENTRY)
-        e.insert(0, "3")
-        e.grid(row=1, column=3, padx=(0, 16), pady=10, sticky="ew")
-        self.entries["waitmax"] = e
-        # Max s  – manuálny label,  CTkToolTip priamo na self.waitmax_label:
-        CTkToolTip(self.waitmax_label,
-            message="Maximum wait time in seconds (between mode only).\nLocust picks a random value between Min and Max\nafter each task.",
-            delay=0.4)
         
-        
-        self.entries["waitmode"].configure(command=self._on_waitmode_change)
-        self._on_waitmode_change("between")
-
-
         # ── Define Test ───────────────────────────────────────────
         s_row = self._card_header(scroll, "Define Test", s_row)
         card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
@@ -832,6 +797,39 @@ class LocustGUI(ctk.CTk):
             font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
         )
         self._stages_total_lbl.grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
+               # ── Locust Parameters ─────────────────────────────────────
+        s_row = self._card_header(scroll, "Locust Parameters", s_row)
+        card = self._card(scroll, s_row); s_row += 1
+        self._field_row(card, 0, "Stop timeout s", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
+        self._field_row(card, 0, "Processes", "processes", "-1", col=2, help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
+                # Wait Time card
+        s_row = self._card_header(scroll, "Wait Time", s_row)
+        card_wt = self._card(scroll, s_row); s_row += 1
+
+        self._combo_row(card_wt, 0, "Mode", "waitmode",
+            ["between", "constant", "constant_throughput"], "between",
+            help="between – random wait between Min and Max seconds\nconstant – fixed wait of Min seconds after each request\nconstant_throughput – maintain a fixed number of requests per second (Min = target RPS)")
+        self._field_row(card_wt, 1, "Min / Value s", "waitmin", "1", col=0, help="Minimum wait time in seconds (between mode),\nfixed wait time (constant mode),\nor target requests per second (constant_throughput mode).")
+
+        #  Max s manuálne aby sme mali referenciu na label ──
+        self.waitmax_label = ctk.CTkLabel(
+            card_wt, text="Max s",
+            font=ctk.CTkFont(size=15), text_color=C_LABEL,
+            anchor="w", width=self.LBL_W
+        )
+        self.waitmax_label.grid(row=1, column=2, padx=(16, 8), pady=10, sticky="w")
+        e = ctk.CTkEntry(card_wt, width=self.ENTR_W, fg_color=C_ENTRY)
+        e.insert(0, "3")
+        e.grid(row=1, column=3, padx=(0, 16), pady=10, sticky="ew")
+        self.entries["waitmax"] = e
+        # Max s  – manuálny label,  CTkToolTip priamo na self.waitmax_label:
+        CTkToolTip(self.waitmax_label,
+            message="Maximum wait time in seconds (between mode only).\nLocust picks a random value between Min and Max\nafter each task.",
+            delay=0.4)
+        
+        
+        self.entries["waitmode"].configure(command=self._on_waitmode_change)
+        self._on_waitmode_change("between")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
