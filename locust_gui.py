@@ -1290,7 +1290,7 @@ class LocustGUI(ctk.CTk):
         reports = []
         if not os.path.isdir(REPORT_DIR):
             return reports
-        for fname in sorted(os.listdir(REPORT_DIR), reverse=True):
+        for fname in sorted(os.listdir(REPORT_DIR), key=lambda f: os.path.getmtime(os.path.join(REPORT_DIR, f)), reverse=True):
             if not fname.lower().endswith(".pdf"):
                 continue
             fpath = os.path.join(REPORT_DIR, fname)
@@ -1611,12 +1611,13 @@ class LocustGUI(ctk.CTk):
                 target_ip       = str(cfg.get("target_ip",       target_clean))
                 source_range    = str(cfg.get("source_range",    self._get_source_range()))
                 interface       = str(cfg.get("interface",       self.get("interface")))
+                reach_src_ip    = str(cfg.get("reach_src_ip", self.get("reach_src_ip")))
                 reach_threshold = float(cfg.get("reach_threshold", 50))
                 test_type_cfg   = str(cfg.get("test_type",       self.get("test_type")))
                 processes       = str(cfg.get("processes",       self.get("processes")))
                 stop_timeout    = str(cfg.get("stop_timeout",    self.get("stop_timeout") or "60"))
                 self.write_log(f"✓ Params: {target_clean} | {source_range} | threshold={reach_threshold}%")
-                return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg, processes, stop_timeout
+                return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg, processes, stop_timeout, reach_src_ip
             except Exception as e:
                 self.write_log(f"⚠ Error reading config: {e}")
         return (
@@ -1628,6 +1629,7 @@ class LocustGUI(ctk.CTk):
             self.get("test_type"),
             self.get("processes"),
             self.get("stop_timeout") or "60",
+            self.get("reach_src_ip") or self._get_ip_start(),
         )
 
     # ================================================================
@@ -1655,15 +1657,7 @@ class LocustGUI(ctk.CTk):
                 prefix_len  = prefix_len,
             )
             self.write_log(f"✓ IP pool created [{ip_ver.upper()}]")
-            self.write_log("▶ Generating topology diagram...")
-            create_topology_diagram(
-                target_ip    = self._get_target_clean(),
-                source_ip    = self._get_source_range(),
-                interface    = self.get("interface"),
-                output_file  = os.path.join(REPORT_DIR, "topology_diagram.png"),
-                reach_src_ip = self.get("reach_src_ip") or self._get_ip_start(),
-            )
-            self.write_log("✓ Topology diagram generated")
+
             self.write_log("✓ SETUP COMPLETE")
             self.write_log("=" * 60)
         except Exception as e:
@@ -1794,7 +1788,7 @@ class LocustGUI(ctk.CTk):
     def _generate_report_thread(self):
         try:
             (target_clean, target_ip, source_range, interface,
-             reach_threshold, test_type_cfg, processes, stop_timeout) = self._load_test_config(BASE_DIR)
+             reach_threshold, test_type_cfg, processes, stop_timeout, reach_src_ip) = self._load_test_config(BASE_DIR)
 
             report_name = self._report_name_entry.get().strip() or "Locust_Report"
             if not report_name.endswith(".pdf"):
