@@ -256,6 +256,7 @@ class LocustGUI(ctk.CTk):
         self.log_queue       = queue.Queue()
         self.locustfile_path = None
         self.entries         = {}
+        self._labels         = {}
         self._active_page    = None
         self._nav_buttons    = {}
         self._pages          = {}
@@ -502,7 +503,7 @@ class LocustGUI(ctk.CTk):
             command=self._change_theme
         )
         self._theme_combo.set(self._current_theme)
-        self._theme_combo.grid(row=10, column=0, padx=15, pady=(0, 8))
+        self._theme_combo.grid(row=10, column=0, padx=(15, 0), pady=(0, 8), sticky="w")
 
         ctk.CTkLabel(
             sidebar, text="v0.1  •  2026",
@@ -800,7 +801,7 @@ class LocustGUI(ctk.CTk):
                # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row); s_row += 1
-        self._field_row(card, 0, "Stop timeout s", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
+        self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
         self._field_row(card, 0, "Processes", "processes", "-1", col=2, help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
                 # Wait Time card
         s_row = self._card_header(scroll, "Wait Time", s_row)
@@ -809,25 +810,10 @@ class LocustGUI(ctk.CTk):
         self._combo_row(card_wt, 0, "Mode", "waitmode",
             ["between", "constant", "constant_throughput"], "between",
             help="between – random wait between Min and Max seconds\nconstant – fixed wait of Min seconds after each request\nconstant_throughput – maintain a fixed number of requests per second (Min = target RPS)")
-        self._field_row(card_wt, 1, "Min / Value s", "waitmin", "1", col=0, help="Minimum wait time in seconds (between mode),\nfixed wait time (constant mode),\nor target requests per second (constant_throughput mode).")
+        self._field_row(card_wt, 1, "Min / Value (s)", "waitmin", "1", col=0, help="Minimum wait time in seconds (between mode),\nfixed wait time (constant mode),\nor target requests per second (constant_throughput mode).")
 
-        #  Max s manuálne aby sme mali referenciu na label ──
-        self.waitmax_label = ctk.CTkLabel(
-            card_wt, text="Max s",
-            font=ctk.CTkFont(size=15), text_color=C_LABEL,
-            anchor="w", width=self.LBL_W
-        )
-        self.waitmax_label.grid(row=1, column=2, padx=(16, 8), pady=10, sticky="w")
-        e = ctk.CTkEntry(card_wt, width=self.ENTR_W, fg_color=C_ENTRY)
-        e.insert(0, "3")
-        e.grid(row=1, column=3, padx=(0, 16), pady=10, sticky="ew")
-        self.entries["waitmax"] = e
-        # Max s  – manuálny label,  CTkToolTip priamo na self.waitmax_label:
-        CTkToolTip(self.waitmax_label,
-            message="Maximum wait time in seconds (between mode only).\nLocust picks a random value between Min and Max\nafter each task.",
-            delay=0.4)
-        
-        
+        self._field_row(card_wt, 1, "Max (s)", "waitmax", "3", col=2,
+    help="Maximum wait time in seconds (between mode only).\nLocust picks a random value between Min and Max\nafter each task.")
         self.entries["waitmode"].configure(command=self._on_waitmode_change)
         self._on_waitmode_change("between")
 
@@ -901,15 +887,14 @@ class LocustGUI(ctk.CTk):
         return outer
     def _on_waitmode_change(self, value):
         max_entry = self.entries["waitmax"]
-        
-        max_label = self.waitmax_label 
+        max_label = self._labels["waitmax"]
 
         if value == "between":
-            max_label.grid()       # zobraz label
-            max_entry.grid()       # zobraz pole
+            max_label.grid()
+            max_entry.grid()
         else:
-            max_label.grid_remove()  # skry label
-            max_entry.grid_remove()  # skry pole
+            max_label.grid_remove()
+            max_entry.grid_remove()
 
     # ================================================================
     # STAGE HELPERS
@@ -1428,6 +1413,7 @@ class LocustGUI(ctk.CTk):
             e.insert(0, default)
         e.grid(row=row, column=col + 1, padx=(0, 16), pady=10, sticky="ew")
         self.entries[key] = e
+        self._labels[key] = lbl
 
     def _combo_row(self, card, row, label, key, values, default, col=0, help: str = None):
         lbl = ctk.CTkLabel(
@@ -1456,6 +1442,7 @@ class LocustGUI(ctk.CTk):
         cb.set(default if default in values else (values[0] if values else default))
         cb.grid(row=row, column=col + 1, padx=(0, 16), pady=10, sticky="ew")
         self.entries[key] = cb
+        self._labels[key] = lbl
 
     # ================================================================
     # IP VERSION HELPERS
