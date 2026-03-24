@@ -30,6 +30,7 @@ HISTORY_FILE = os.path.join(DATA_DIR,   "report_stats_history.csv")
 NETWORK_FILE = os.path.join(DATA_DIR,   "network_usage.csv")
 META_FILE    = os.path.join(DATA_DIR,   "report_metadata.csv")
 PDF_FILE     = os.path.join(REPORT_DIR, "Locust_Report.pdf")
+FAILURES_FILE = os.path.join(DATA_DIR, "report_failures.csv")
 
 # Biele stránky — text musí byť tmavý
 C_TEXT       = colors.HexColor("#1a1a1a")   # tmavý text (čitateľný na bielom)
@@ -693,7 +694,38 @@ def create_pdf_report(stats_file, history_file, output_file,
     ], col_widths=[200, None]))
     story.append(Spacer(1, 14))
     story.append(PageBreak())
+    # ── Failures OVERVIEW ──────────────────────────────────────
+    if os.path.exists(FAILURES_FILE):
+        fdf = pd.read_csv(FAILURES_FILE)
+        if not fdf.empty:
+            story.append(ColorBand("Failure Details", bg=C_DANGER))
+            story.append(Spacer(1, 8))
 
+            rows = [["Method", "Endpoint", "Occurrences", "Error"]]
+            for _, row in fdf.iterrows():
+                rows.append([
+                    str(row.get("Method", "")),
+                    str(row.get("Name", "")),
+                    str(row.get("Occurrences", "")),
+                    str(row.get("Error", ""))[:80],  # skráť dlhé správy
+                ])
+
+            t = Table(rows, colWidths=[40, 80, 60, 270])
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), C_DANGER),
+                ("TEXTCOLOR",  (0,0), (-1,0), colors.white),
+                ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",   (0,0), (-1,-1), 8),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [C_WHITE, C_ROW_ALT]),
+                ("GRID",       (0,0), (-1,-1), 0.4, C_BORDER),
+                ("LEFTPADDING",(0,0), (-1,-1), 6),
+                ("RIGHTPADDING",(0,0), (-1,-1), 6),
+                ("TOPPADDING", (0,0), (-1,-1), 4),
+                ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 14))
+            story.append(PageBreak())
     # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
         story.append(ColorBand("  Network Topology"))

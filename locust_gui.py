@@ -15,6 +15,8 @@ import glob
 import json
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
+from CTkToolTip import CTkToolTip
+
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -303,6 +305,9 @@ class LocustGUI(ctk.CTk):
             "target":           os.getenv("TARGET_HOST"),
             "interface":        os.getenv("INTERFACE"),
             "test_type":        os.getenv("TEST_TYPE"),
+            "waitmode":         os.getenv("WAIT_MODE", "between"),
+            "waitmin":          os.getenv("WAIT_MIN", "1"),
+            "waitmax":          os.getenv("WAIT_MAX", "3"),
             "ip_start":         os.getenv("IP_START"),
             "ip_end":           os.getenv("IP_END"),
             "ipv4prefix":       os.getenv("IPV4PREFIX", "32"),
@@ -351,6 +356,9 @@ class LocustGUI(ctk.CTk):
             "TARGET_HOST":     self.get("target"),
             "INTERFACE":       self.get("interface"),
             "TEST_TYPE":       self.get("test_type"),
+            "WAIT_MODE": self.get("waitmode"),
+            "WAIT_MIN":  self.get("waitmin"),
+            "WAIT_MAX":  self.get("waitmax"),
             "IP_VERSION":      self._active_ip_version(),
             "IP_START":        self.entries["ip_start"].get().strip(),
             "IP_END":          self.entries["ip_end"].get().strip(),
@@ -575,13 +583,13 @@ class LocustGUI(ctk.CTk):
 
         row = self._card_header(scroll, "General", row)
         card = self._card(scroll, row); row += 1
-        self._field_row(card, 0, "Target host",  "target",    "https://google.sk")
+        self._field_row(card, 0, "Target host",  "target",    "https://google.sk", help="Full URL or IP address of the server under test.\nExample: https://192.168.1.1 or http://myapp.local:8080")
         ifaces = get_network_interfaces()
         self._combo_row(card, 1, "Interface", "interface", ifaces,
-                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"))
-        self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2)
+                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
+        self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2, help="Label describing the test scenario.\nAppears in the generated PDF report header.")
         self._field_row(card, 1, "Source ports", "src_ports", "",          col=2,
-                        ph="e.g. 1024-65535")
+                        ph="e.g. 1024-65535", help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
 
         row = self._card_header(scroll, "IP Pool", row)
         card2 = self._card(scroll, row); row += 1
@@ -683,11 +691,11 @@ class LocustGUI(ctk.CTk):
         # ── Reachability ──────────────────────────────────────────
         row = self._card_header(scroll, "Reachability", row)
         card3 = self._card(scroll, row); row += 1
-        self._field_row(card3, 0, "Interval (s)",         "reach_interval",  "5")
-        self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",   "5")
-        self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "", col=2, ph="= IP range start")
-        self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2)
-        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0)
+        self._field_row(card3, 0, "Interval (s)",         "reach_interval",  "5", help="How often (in seconds) a reachability probe is sent to the target\nduring the test. Lower = more precise, higher = less overhead.")
+        self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",   "5",help="Maximum time to wait for a response to each probe.\nProbes exceeding this limit are counted as failures.")
+        self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "", col=2, ph="= IP range start", help="Source IP used for reachability probes.\nLeave empty to use the first IP from the pool.\nUseful when you want probes from a specific address.")
+        self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2, help="Network interface used for reachability probes.\nLeave empty to use the main interface defined above.")
+        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0, help="Percentage of failed probes above which the test\nis marked as FAILED in the PDF report.\nExample: 50 means more than half of probes must succeed.")
 
         # ── Network Monitor ───────────────────────────────────────
         row = self._card_header(scroll, "Network Monitor", row)
@@ -695,7 +703,7 @@ class LocustGUI(ctk.CTk):
         ifaces = get_network_interfaces()
         self._combo_row(
             card_mon, 0, "Interface", "monitor_interface", ifaces,
-            os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33")
+            os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33",),help="Interface to monitor for network traffic statistics\n(bytes sent/received, packets) during the test.\nResults are saved to network_usage.csv and shown in the report."
         )
 
         # ── Actions — fixed bottom ────────────────────────────────
@@ -747,8 +755,37 @@ class LocustGUI(ctk.CTk):
         # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row); s_row += 1
-        self._field_row(card, 0, "Stop timeout s", "stop_timeout", "60", col=0)
-        self._field_row(card, 0, "Processes", "processes", "-1", col=2)
+        self._field_row(card, 0, "Stop timeout s", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
+        self._field_row(card, 0, "Processes", "processes", "-1", col=2, help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
+                # Wait Time card
+        s_row = self._card_header(scroll, "Wait Time", s_row)
+        card_wt = self._card(scroll, s_row); s_row += 1
+
+        self._combo_row(card_wt, 0, "Mode", "waitmode",
+            ["between", "constant", "constant_throughput"], "between",
+            help="between – random wait between Min and Max seconds\nconstant – fixed wait of Min seconds after each request\nconstant_throughput – maintain a fixed number of requests per second (Min = target RPS)")
+        self._field_row(card_wt, 1, "Min / Value s", "waitmin", "1", col=0, help="Minimum wait time in seconds (between mode),\nfixed wait time (constant mode),\nor target requests per second (constant_throughput mode).")
+
+        #  Max s manuálne aby sme mali referenciu na label ──
+        self.waitmax_label = ctk.CTkLabel(
+            card_wt, text="Max s",
+            font=ctk.CTkFont(size=15), text_color=C_LABEL,
+            anchor="w", width=self.LBL_W
+        )
+        self.waitmax_label.grid(row=1, column=2, padx=(16, 8), pady=10, sticky="w")
+        e = ctk.CTkEntry(card_wt, width=self.ENTR_W, fg_color=C_ENTRY)
+        e.insert(0, "3")
+        e.grid(row=1, column=3, padx=(0, 16), pady=10, sticky="ew")
+        self.entries["waitmax"] = e
+        # Max s  – manuálny label,  CTkToolTip priamo na self.waitmax_label:
+        CTkToolTip(self.waitmax_label,
+            message="Maximum wait time in seconds (between mode only).\nLocust picks a random value between Min and Max\nafter each task.",
+            delay=0.4)
+        
+        
+        self.entries["waitmode"].configure(command=self._on_waitmode_change)
+        self._on_waitmode_change("between")
+
 
         # ── Define Test ───────────────────────────────────────────
         s_row = self._card_header(scroll, "Define Test", s_row)
@@ -864,6 +901,17 @@ class LocustGUI(ctk.CTk):
         self._stop_enabled = False
 
         return outer
+    def _on_waitmode_change(self, value):
+        max_entry = self.entries["waitmax"]
+        
+        max_label = self.waitmax_label 
+
+        if value == "between":
+            max_label.grid()       # zobraz label
+            max_entry.grid()       # zobraz pole
+        else:
+            max_label.grid_remove()  # skry label
+            max_entry.grid_remove()  # skry pole
 
     # ================================================================
     # STAGE HELPERS
@@ -1360,31 +1408,55 @@ class LocustGUI(ctk.CTk):
         card.grid_columnconfigure(3, minsize=self.ENTR_W, weight=1)
         return card
 
-    def _field_row(self, card, row, label, key, default, col=0, ph=None):
-        ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
+    def _field_row(self, card, row, label, key, default, col=0, ph=None, help: str = None):
+        lbl = ctk.CTkLabel(
+            card,
+            text=f"{label} ⓘ" ,
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT ,  # ⓘ zvýrazní celý label
+            anchor="w",
+            width=self.LBL_W,
+            cursor="question_arrow" if help else "arrow",
+        )
+        lbl.grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
+
+        if help:
+            CTkToolTip(lbl, message=help, delay=0.3, x_offset=10, y_offset=-10)
+
         e = ctk.CTkEntry(card, width=self.ENTR_W,
                          placeholder_text=ph or default or "",
                          fg_color=C_ENTRY)
         if default:
             e.insert(0, default)
-        e.grid(row=row, column=col+1, padx=(0, 16), pady=10, sticky="ew")
+        e.grid(row=row, column=col + 1, padx=(0, 16), pady=10, sticky="ew")
         self.entries[key] = e
 
-    def _combo_row(self, card, row, label, key, values, default, col=0):
-        ctk.CTkLabel(card, text=label, font=ctk.CTkFont(size=15),
-                     text_color=C_LABEL, anchor="w", width=self.LBL_W
-                     ).grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
-        cb = ctk.CTkComboBox(card, width=self.ENTR_W, values=values,
-                             fg_color=C_ENTRY,
-                             button_color=C_ACTIVE,
-                             button_hover_color=C_HOVER,
-                             dropdown_fg_color=C_CARD,
-                             dropdown_hover_color=darken(C_CARD, 15),
-                             dropdown_text_color=C_TEXT)
+    def _combo_row(self, card, row, label, key, values, default, col=0, help: str = None):
+        lbl = ctk.CTkLabel(
+            card,
+            text=f"{label} ⓘ",
+            font=ctk.CTkFont(size=15),
+            text_color=C_TEXT,
+            anchor="w",
+            width=self.LBL_W,
+            cursor="question_arrow" if help else "arrow",
+        )
+        lbl.grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
+
+        if help:
+            CTkToolTip(lbl, message=help, delay=0.3, x_offset=10, y_offset=-10)
+
+        cb = ctk.CTkComboBox(
+            card, width=self.ENTR_W, values=values,
+            fg_color=C_ENTRY,
+            button_color=C_ACTIVE,
+            button_hover_color=C_HOVER,
+            dropdown_fg_color=C_CARD,
+            dropdown_hover_color=darken(C_CARD, 15),
+            dropdown_text_color=C_TEXT,
+        )
         cb.set(default if default in values else (values[0] if values else default))
-        cb.grid(row=row, column=col+1, padx=(0, 16), pady=10, sticky="ew")
+        cb.grid(row=row, column=col + 1, padx=(0, 16), pady=10, sticky="ew")
         self.entries[key] = cb
 
     # ================================================================

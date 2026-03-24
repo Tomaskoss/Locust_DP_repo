@@ -1,4 +1,4 @@
-from locust import events, HttpUser, task, between, LoadTestShape
+from locust import events, HttpUser, task, between, LoadTestShape, constant, constant_throughput
 from locust.runners import WorkerRunner
 from datetime import datetime
 from dotenv import load_dotenv
@@ -26,10 +26,19 @@ NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"))
 
-
-
-
 _local = threading.local()
+
+WAIT_MODE = os.getenv("WAIT_MODE", "between")
+WAIT_MIN  = float(os.getenv("WAIT_MIN", "1"))
+WAIT_MAX  = float(os.getenv("WAIT_MAX", "3"))
+
+def build_wait_time():
+    if WAIT_MODE == "constant":
+        return constant(WAIT_MIN)
+    elif WAIT_MODE == "constant_throughput":
+        return constant_throughput(WAIT_MIN)
+    else:
+        return between(WAIT_MIN, WAIT_MAX)
 
 
 def _source_bound_create_connection(address, timeout=None,
@@ -349,7 +358,7 @@ class MyUser(HttpUser):
     _ip_pool   = None
     _port_pool = None
     _pool_lock = threading.Lock()
-    wait_time  = between(1, 2)
+    wait_time = build_wait_time()
 
     @classmethod
     def get_ip_pool(cls):
@@ -386,5 +395,24 @@ class MyUser(HttpUser):
 
     @task
     def index(self):
-        self.client.get("/")
+        with self.client.get("/", catch_response=True) as resp:
+            code = resp.status_code
+            if code in (200, 201):
+                resp.success()
+            elif code in (301, 302, 303, 307, 308):
+                resp.success()              # redirect je OK — server žije
+            elif code == 429:
+                resp.failure(f"Rate limited (IP: {self.source_ip})")
+            elif code == 403:
+                resp.failure(f"IP blocked: {self.source_ip}")
+            elif code == 401:
+                resp.failure("Unauthorized")
+            elif code == 503:
+                resp.failure("Service unavailable")
+            elif code == 500:
+                resp.failure("Server error 500")
+            elif code == 0:
+                resp.failure("Connection error")
+            else:
+                resp.failure(f"Unexpected: {code}")
 
