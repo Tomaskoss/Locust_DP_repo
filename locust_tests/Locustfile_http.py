@@ -7,24 +7,20 @@ import socket
 import csv
 import random
 import threading
-import time
 import sys
 import json
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "network"))
-from Network_monitor import NetworkMonitor
-
 BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR       = os.path.join(BASE_DIR, "data")
 IP_POOL_FILE   = os.path.join(BASE_DIR, "ip_pool.txt")
 PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
-NETWORK_FILE   = os.path.join(DATA_DIR, "network_usage.csv")
 
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"))
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
 _local = threading.local()
 
@@ -82,6 +78,8 @@ def _source_bound_create_connection(address, timeout=None,
                 sock.bind((src_ip, src_port))
             sock.settimeout(timeout)
             sock.connect(sockaddr)
+            _local.last_used_port = sock.getsockname()[1] 
+
             return sock
         except Exception as e:
             sock.close()
@@ -174,20 +172,6 @@ def load_port_pool():
         print(f"WARNING: Failed to load port pool: {e}")
         return None
 
-
-def detect_network_interface():
-    try:
-        with open("/proc/net/dev", "r") as f:
-            lines = f.readlines()[2:]
-            for line in lines:
-                interface = line.split(":")[0].strip()
-                if interface != "lo" and not interface.startswith("docker"):
-                    return interface
-    except Exception:
-        pass
-    return "ens33"
-
-
 # ============================================================
 #  TEST METADATA & EVENTS
 # ============================================================
@@ -196,15 +180,6 @@ TEST_TYPE       = os.getenv("TEST_TYPE", "Locust Load Test")
 start_time      = None
 target_host     = None
 target_ip       = None
-network_monitor = None
-
-
-@events.init.add_listener
-def on_locust_init(environment, **kwargs):
-    global network_monitor
-    if isinstance(environment.runner, WorkerRunner):
-        print("This is a worker process - network monitoring disabled")
-        return
 
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):
@@ -214,12 +189,14 @@ def on_test_start(environment, **kwargs):
 
     start_time  = datetime.now()
     target_host = environment.host or "Unknown"
+    
 
     #  Skús načítať z test_config.csv (vytvorí GUI)
     target_ip = None
     try:
-        cfg = pd.read_csv(os.path.join(BASE_DIR, "test_config.csv")).iloc[0]
-        target_ip = str(cfg.get("target_ip", "")).strip()
+        with open(os.path.join(BASE_DIR, "test_config.csv"), newline="") as f:
+            cfg = next(csv.DictReader(f))
+            target_ip = str(cfg.get("target_ip", "")).strip()
         if target_ip:
             print(f"Target is {'IPv6' if is_ipv6(target_ip) else 'IPv4'} address: {target_ip}")
     except Exception:
@@ -319,9 +296,13 @@ class SourceIPAdapter(HTTPAdapter):
     def send(self, request, **kwargs):
         _local.source_params = (self.source_ip, self.source_port, self._use_v6)
         try:
-            return super().send(request, **kwargs)
+            response = super().send(request, **kwargs)
+            # Po prvom spojení aktualizuj reálny port
+            actual = getattr(_local, "last_used_port", None)
+            if actual and actual != self.source_port:
+                self.source_port = actual
+            return response
         finally:
-          
             try:
                 del _local.source_params
             except AttributeError:
@@ -379,40 +360,47 @@ class MyUser(HttpUser):
     def on_start(self):
         ip_pool          = self.get_ip_pool()
         self.source_ip   = random.choice(ip_pool)
-
         port_pool        = self.get_port_pool()
         self.source_port = random.choice(port_pool) if port_pool else 0
+        self._logged_port = False  # ← flag
 
-        print(
-            f"User started → IP: {self.source_ip} "
-            f"({'IPv6' if is_ipv6(self.source_ip) else 'IPv4'})  "
-            f"Port: {self.source_port if self.source_port else 'random (OS)'}"
-        )
-
-        adapter = SourceIPAdapter(self.source_ip, self.source_port)
-        self.client.mount("http://",  adapter)
-        self.client.mount("https://", adapter)
+        self.adapter = SourceIPAdapter(self.source_ip, self.source_port)
+        self.client.mount("http://",  self.adapter)
+        self.client.mount("https://", self.adapter)
 
     @task
     def index(self):
-        with self.client.get("/", catch_response=True) as resp:
-            code = resp.status_code
-            if code in (200, 201):
-                resp.success()
-            elif code in (301, 302, 303, 307, 308):
-                resp.success()              # redirect je OK — server žije
-            elif code == 429:
-                resp.failure(f"Rate limited (IP: {self.source_ip})")
-            elif code == 403:
-                resp.failure(f"IP blocked: {self.source_ip}")
-            elif code == 401:
-                resp.failure("Unauthorized")
-            elif code == 503:
-                resp.failure("Service unavailable")
-            elif code == 500:
-                resp.failure("Server error 500")
-            elif code == 0:
-                resp.failure("Connection error")
-            else:
-                resp.failure(f"Unexpected: {code}")
+        if not self._logged_port:
+            # Prvý request — po connect() je v adapter.source_port reálny port
+            with self.client.get("/", catch_response=True) as resp:
+                actual_port = self.adapter.source_port or "OS ephemeral"
+                print(
+                    f"User started → IP: {self.source_ip} "
+                    f"({'IPv6' if is_ipv6(self.source_ip) else 'IPv4'})  "
+                    f"Port: {actual_port}"
+                )
+                self._logged_port = True
+                code = resp.status_code
+        else:
+            with self.client.get("/", catch_response=True) as resp:
+                code = resp.status_code
+
+        if code in (200, 201):
+            resp.success()
+        elif code in (301, 302, 303, 307, 308):
+            resp.success()
+        elif code == 429:
+            resp.failure(f"Rate limited (IP: {self.source_ip})")
+        elif code == 403:
+            resp.failure(f"IP blocked: {self.source_ip}")
+        elif code == 401:
+            resp.failure("Unauthorized")
+        elif code == 503:
+            resp.failure("Service unavailable")
+        elif code == 500:
+            resp.failure("Server error 500")
+        elif code == 0:
+            resp.failure("Connection error")
+        else:
+            resp.failure(f"Unexpected: {code}")
 

@@ -149,6 +149,14 @@ def generate_topology_diagram(target_ip=None, source_ip=None,
     except Exception as e:
         print(f"✗ Error generating topology: {e}")
         return False
+        
+def _get_os_port_range():
+    try:
+        with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
+            lo, hi = f.read().split()
+        return f"OS ephemeral ({lo}–{hi})"
+    except Exception:
+        return "OS assigned (random)"
 
 
 def load_test_times(meta_path):
@@ -649,7 +657,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
         [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
         [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
-        [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else "OS assigned (random)", S["value"])],
+        [Paragraph("Source ports", S["label"]), Paragraph(str(src_ports) if src_ports else _get_os_port_range(), S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
          Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],

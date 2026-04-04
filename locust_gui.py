@@ -27,7 +27,6 @@ sys.path.insert(0, os.path.join(BASE_DIR, "report"))
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
-from Create_topology        import create_topology_diagram
 from Locust_report_v3       import create_pdf_report
 from Create_IP_Pool_skript  import main as create_pool
 from Remove_IP_Pool_skript  import main as remove_pool
@@ -713,7 +712,7 @@ class LocustGUI(ctk.CTk):
         bf.grid_columnconfigure((0, 1), weight=1)
 
         for col, (icon, label, sub, cmd, color) in enumerate([
-            ("⚙", "Setup",   "IP Pool + Topology", self.setup_env, C_BLUE),
+            ("⚙", "Setup",   "IP Pool", self.setup_env, C_BLUE),
             ("🗑", "Cleanup", "Remove IP Pool",      self.cleanup,   C_DANGER),
         ]):
             card_btn = ctk.CTkFrame(bf, fg_color=color, corner_radius=10, cursor="hand2")
@@ -1545,7 +1544,12 @@ class LocustGUI(ctk.CTk):
         else:
             if os.path.exists(port_file):
                 os.remove(port_file)
-            self.write_log("ℹ Source ports: OS assigned automatically")
+            try:
+                with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
+                    lo, hi = f.read().split()
+                self.write_log(f"ℹ Source ports: OS ephemeral range {lo}–{hi}")
+            except Exception:
+                self.write_log("ℹ Source ports: OS assigned automatically")
 
     def _save_test_config(self, script_dir):
         config_file  = os.path.join(script_dir, "test_config.csv")
@@ -1701,13 +1705,14 @@ class LocustGUI(ctk.CTk):
             self._save_test_config(BASE_DIR)
             self.write_log("=" * 60)
 
+            interface = self.get("monitor_interface") or self.get("interface")
             self._network_monitor = NetworkMonitor(
-                interface   = self.get("monitor_interface") or self.get("interface"),
+                interface   = interface,
                 interval    = 1,
                 output_file = os.path.join(DATA_DIR, "network_usage.csv")
             )
             self._network_monitor.start()
-            self.write_log(f"📡 Network monitor started on {self.get('interface')}")
+            self.write_log(f"📡 Network monitor started on {interface}")
 
             self.write_log("▶ Starting Reachability monitoring...")
             reach_thread = threading.Thread(
