@@ -38,70 +38,86 @@ REPORT_DIR = os.path.join(BASE_DIR, "report")
 
 # ── Themes ─────────────────────────────────────────────────────────
 THEMES = {
-    "Dark Blue": {
-        "SIDEBAR":  "#1a1a2e",
-        "CONTENT":  "#16213e",
-        "CARD":     "#1f2b47",
-        "ACTIVE":   "#85b832",
-        "HOVER":    "#1558A8",
-        "TEXT":     "#e0e0e0",
-        "MUTED":    "#7a8899",
-        "LABEL":    "#c5cfe0",
-        "HEADER":   "#85b832",
-        "ENTRY":    "#263550",
-        "DANGER":   "#922b21",
-        "SUCCESS":  "#85b832",
-        "PURPLE":   "#7D3C98",
-        "BLUE":     "#2a5f3a",
-    },
-    "Dark Green": {
-        "SIDEBAR":  "#0d1f0d",
-        "CONTENT":  "#111a11",
-        "CARD":     "#1a2e1a",
-        "ACTIVE":   "#4caf50",
-        "HOVER":    "#388e3c",
-        "TEXT":     "#e0e0e0",
-        "MUTED":    "#6a8f6a",
-        "LABEL":    "#b8d4b8",
-        "HEADER":   "#4caf50",
-        "ENTRY":    "#1e351e",
-        "DANGER":   "#C0392B",
-        "SUCCESS":  "#2e7d32",
-        "PURPLE":   "#7D3C98",
-        "BLUE":     "#1565c0",
-    },
-    "Dark Red": {
-        "SIDEBAR":  "#1a0a0a",
-        "CONTENT":  "#1a1010",
-        "CARD":     "#2b1515",
-        "ACTIVE":   "#e53935",
-        "HOVER":    "#b71c1c",
-        "TEXT":     "#e0e0e0",
-        "MUTED":    "#8f6060",
-        "LABEL":    "#d4b8b8",
-        "HEADER":   "#e53935",
-        "ENTRY":    "#3a1a1a",
-        "DANGER":   "#C0392B",
-        "SUCCESS":  "#1E8449",
-        "PURPLE":   "#7D3C98",
-        "BLUE":     "#2471A3",
-    },
     "Locust Dark": {
-        "SIDEBAR":  "#0a0a0a",
-        "CONTENT":  "#111111",
-        "CARD":     "#1a1a1a",
-        "ACTIVE":   "#2a5f3a",
-        "HOVER":    "#1e4a2c",
-        "TEXT":     "#ffffff",
-        "MUTED":    "#888888",
-        "LABEL":    "#cccccc",
-        "HEADER":   "#2a5f3a",
-        "ENTRY":    "#242424",
-        "DANGER":   "#922b21",
-        "SUCCESS":  "#2a5f3a",
-        "PURPLE":   "#7D3C98",
-        "BLUE":     "#2a5f3a",
+        "BG_SIDEBAR":  "#121212",
+        "BG_MAIN":     "#111111",
+        "BG_CARD":     "#1a1a1a",
+        "ACCENT":      "#2a5f3a",
+        "ACCENT_HOVER":"#1e4a2c",
+        "FG_TEXT":     "#ffffff",
+        "FG_MUTED":    "#888888",
+        "FG_LABEL":    "#cccccc",
+        "FG_HEADER":   "#2a5f3a",
+        "BG_INPUT":    "#242424",
+        "BTN_DANGER":  "#922b21",
+        "BTN_START":   "#2a5f3a",
+        "BTN_REPORT":  "#7D3C98",
+        "BTN_SETUP":   "#2a5f3a",
     },
+    "Navy Blue": {
+        "BG_SIDEBAR":   "#222831",
+        "BG_MAIN":      "#1c2128",
+        "BG_CARD":      "#222831",
+        "ACCENT":       "#23395B",
+        "ACCENT_HOVER": "#23395B",
+        "FG_TEXT":      "#DBD4D3",
+        "FG_MUTED":     "#8899a6",
+        "FG_LABEL":     "#FFFFFF",
+        "FG_HEADER":    "#FFFFFF",
+        "BG_INPUT":     "#2d3340",
+        "BTN_DANGER":   "#922b21",
+        "BTN_START":    "#23395B",
+        "BTN_REPORT":   "#23395B",
+        "BTN_SETUP":    "#23395B",
+    },
+    "Discord Light": {
+        "BG_SIDEBAR":   "#282b30",   # tmavý panel
+        "BG_MAIN":      "#36393e",   # hlavný obsah
+        "BG_CARD":      "#424549",   # karty/sekcie
+        "ACCENT":       "#7289da",   # blurple
+        "ACCENT_HOVER": "#5b73c7",   # tmavší blurple
+        "FG_TEXT":      "#dcddde",   # hlavný text (Discord štandard)
+        "FG_MUTED":     "#72767d",   # tlmený text
+        "FG_LABEL":     "#b9bbbe",   # labely polí
+        "FG_HEADER":    "#7289da",   # nadpisy sekcií
+        "BG_INPUT":     "#1e2124",   # najtmavšie — inputy
+        "BTN_DANGER":   "#ed4245",   # Discord červená
+        "BTN_START":    "#7289da",   # Discord blurple
+        "BTN_REPORT":   "#7289da",   # blurple
+        "BTN_SETUP":    "#7289da",   # blurple
+    },
+    "Discord Darkest": {
+        "BG_SIDEBAR":   "#121214",   # takmer čierna
+        "BG_MAIN":      "#1a1a1e",   
+        "BG_CARD":      "#242428",   
+        "ACCENT":       "#5b73c7",   # blurple
+        "ACCENT_HOVER": "#7289da",
+        "FG_TEXT":      "#dcddde",
+        "FG_MUTED":     "#72767d",
+        "FG_LABEL":     "#b9bbbe",
+        "FG_HEADER":    "#7289da",
+        "BG_INPUT":     "#0d0e10",   # absolútne najtemnejšia
+        "BTN_DANGER":   "#ed4245",
+        "BTN_START":    "#5b73c7",
+        "BTN_REPORT":   "#5b73c7",
+        "BTN_SETUP":    "#5b73c7",
+    },
+    "Netflix": {
+    "BG_SIDEBAR":   "#141414",   # Netflix čierna
+    "BG_MAIN":      "#181818",   # hlavné pozadie
+    "BG_CARD":      "#222222",   # karty
+    "ACCENT":       "#800000",   # Netflix červená
+    "ACCENT_HOVER": "#b20710",   # tmavšia červená
+    "FG_TEXT":      "#ffffff",   # biely text
+    "FG_MUTED":     "#808080",   # šedý text
+    "FG_LABEL":     "#b3b3b3",   # labely
+    "FG_HEADER":    "#ffffff",   # nadpisy červené
+    "BG_INPUT":     "#0d0d0d",   # najtmavší input
+    "BTN_DANGER":   "#A40031",   # červená = danger
+    "BTN_START":    "#015041",   # Netflix zelená (playing indicator)
+    "BTN_REPORT":   "#015041",   # červená
+    "BTN_SETUP":    "#015041",   # červená
+},
 }
 
 STAGE_PRESETS = {
@@ -131,15 +147,21 @@ def apply_theme(name):
     global C_TEXT, C_MUTED, C_LABEL, C_HEADER, C_ENTRY
     global C_DANGER, C_SUCCESS, C_PURPLE, C_BLUE
     t = THEMES[name]
-    C_SIDEBAR = t["SIDEBAR"]; C_CONTENT = t["CONTENT"]
-    C_CARD    = t["CARD"];    C_ACTIVE  = t["ACTIVE"]
-    C_HOVER   = t["HOVER"];   C_TEXT    = t["TEXT"]
-    C_MUTED   = t["MUTED"];   C_LABEL   = t["LABEL"]
-    C_HEADER  = t["HEADER"];  C_ENTRY   = t["ENTRY"]
-    C_DANGER  = t["DANGER"];  C_SUCCESS = t["SUCCESS"]
-    C_PURPLE  = t["PURPLE"];  C_BLUE    = t["BLUE"]
+    C_SIDEBAR = t["BG_SIDEBAR"]
+    C_CONTENT = t["BG_MAIN"]
+    C_CARD    = t["BG_CARD"]
+    C_ACTIVE  = t["ACCENT"]
+    C_HOVER   = t["ACCENT_HOVER"]
+    C_TEXT    = t["FG_TEXT"]
+    C_MUTED   = t["FG_MUTED"]
+    C_LABEL   = t["FG_LABEL"]
+    C_HEADER  = t["FG_HEADER"]
+    C_ENTRY   = t["BG_INPUT"]
+    C_DANGER  = t["BTN_DANGER"]
+    C_SUCCESS = t["BTN_START"]
+    C_PURPLE  = t["BTN_REPORT"]
+    C_BLUE    = t["BTN_SETUP"]
 
-apply_theme("Locust Dark")
 
 ZOOM_MIN  = 0.5
 ZOOM_MAX  = 2.0
@@ -305,9 +327,6 @@ class LocustGUI(ctk.CTk):
             "target":           os.getenv("TARGET_HOST"),
             "interface":        os.getenv("INTERFACE"),
             "test_type":        os.getenv("TEST_TYPE"),
-            "waitmode":         os.getenv("WAIT_MODE", "between"),
-            "waitmin":          os.getenv("WAIT_MIN", "1"),
-            "waitmax":          os.getenv("WAIT_MAX", "3"),
             "ip_start":         os.getenv("IP_START"),
             "ip_end":           os.getenv("IP_END"),
             "ipv4prefix":       os.getenv("IPV4PREFIX", "32"),
@@ -356,9 +375,6 @@ class LocustGUI(ctk.CTk):
             "TARGET_HOST":     self.get("target"),
             "INTERFACE":       self.get("interface"),
             "TEST_TYPE":       self.get("test_type"),
-            "WAIT_MODE": self.get("waitmode"),
-            "WAIT_MIN":  self.get("waitmin"),
-            "WAIT_MAX":  self.get("waitmax"),
             "IP_VERSION":      self._active_ip_version(),
             "IP_START":        self.entries["ip_start"].get().strip(),
             "IP_END":          self.entries["ip_end"].get().strip(),
@@ -707,31 +723,22 @@ class LocustGUI(ctk.CTk):
         )
 
         # ── Actions — fixed bottom ────────────────────────────────
-        bf = ctk.CTkFrame(outer, fg_color="transparent")
-        bf.grid(row=1, column=0, padx=16, pady=(4, 16), sticky="ew")
-        bf.grid_columnconfigure((0, 1), weight=1)
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)  # spacer vľavo
 
-        for col, (icon, label, sub, cmd, color) in enumerate([
-            ("⚙", "Setup",   "IP Pool", self.setup_env, C_BLUE),
-            ("🗑", "Cleanup", "Remove IP Pool",      self.cleanup,   C_DANGER),
-        ]):
-            card_btn = ctk.CTkFrame(bf, fg_color=color, corner_radius=10, cursor="hand2")
-            card_btn.grid(row=0, column=col,
-                          padx=(0 if col == 0 else 8, 8 if col == 0 else 0),
-                          pady=4, sticky="ew")
-            card_btn.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(card_btn, text=icon, font=ctk.CTkFont(size=18),
-                         fg_color="transparent", text_color="white", cursor="hand2"
-                         ).grid(row=0, column=0, rowspan=2, padx=(14, 8), pady=12, sticky="w")
-            ctk.CTkLabel(card_btn, text=label,
-                         font=ctk.CTkFont(size=12, weight="bold"),
-                         fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
-                         ).grid(row=0, column=1, padx=(0, 12), pady=(10, 0), sticky="w")
-            ctk.CTkLabel(card_btn, text=sub,
-                         font=ctk.CTkFont(size=10),
-                         fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
-                         ).grid(row=1, column=1, padx=(0, 12), pady=(0, 10), sticky="w")
-            self.after(50, lambda cb=card_btn, c=cmd, cl=color: bind_card(cb, c, darken(cl, 25), cl))
+        ctk.CTkButton(bf, text="⚙ Setup IP Pool", width=150, height=32,
+            fg_color=C_BLUE, hover_color=darken(C_BLUE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.setup_env
+        ).grid(row=0, column=1, padx=4, pady=8)
+
+        ctk.CTkButton(bf, text="🗑 Cleanup", width=150, height=32,
+            fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.cleanup
+        ).grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
 
@@ -771,14 +778,34 @@ class LocustGUI(ctk.CTk):
             btn.pack(side="left", padx=(0, 6))
             self._preset_btns[name] = btn
 
-        hdr_frame = ctk.CTkFrame(card_stages, fg_color=darken(C_CARD, 8))
-        hdr_frame.grid(row=1, column=0, padx=12, pady=(4, 0), sticky="ew")
-        hdr_frame.grid_columnconfigure((0, 1, 2), weight=1)
-        for col, txt in enumerate(["Duration (s)", "Users", "Spawn rate"]):
-            ctk.CTkLabel(hdr_frame, text=txt.upper(),
-                         font=ctk.CTkFont(size=10, weight="bold"),
-                         text_color=C_MUTED, anchor="w"
-                         ).grid(row=0, column=col, padx=10, pady=4, sticky="w")
+        self._stages_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
+        self._stages_frame.grid(row=1, column=0, padx=12, pady=(4, 0), sticky="ew")
+
+        self._stages_frame.grid_columnconfigure(0, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(1, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(2, minsize=180, weight=1)
+        self._stages_frame.grid_columnconfigure(3, minsize=130, weight=0)
+        self._stages_frame.grid_columnconfigure(4, minsize=55,  weight=0)
+        self._stages_frame.grid_columnconfigure(5, minsize=55,  weight=0)
+        self._stages_frame.grid_columnconfigure(6, minsize=30,  weight=0)
+        for col, (txt, help_txt) in enumerate([
+            ("Duration (s)", None),
+            ("Users",        None),
+            ("Spawn rate",   None),
+            ("Wait mode",    "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
+            ("Min",          "between: minimum wait (s)\nconstant: fixed wait (s)\nconstant_throughput: target RPS"),
+            ("Max",          "between: maximum wait (s)\nIgnored in other modes"),
+        ]):
+            lbl = ctk.CTkLabel(
+                self._stages_frame,
+                text=f"{txt.upper()} ⓘ" if help_txt else txt.upper(),
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=C_MUTED, anchor="w",
+                cursor="question_arrow" if help_txt else "arrow"
+            )
+            lbl.grid(row=0, column=col, padx=(0,4), pady=4, sticky="w")
+            if help_txt:
+                CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
 
         self._stages_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
         self._stages_frame.grid(row=2, column=0, padx=12, pady=(2, 0), sticky="ew")
@@ -802,19 +829,7 @@ class LocustGUI(ctk.CTk):
         card = self._card(scroll, s_row); s_row += 1
         self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
         self._field_row(card, 0, "Processes", "processes", "-1", col=2, help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
-                # Wait Time card
-        s_row = self._card_header(scroll, "Wait Time", s_row)
-        card_wt = self._card(scroll, s_row); s_row += 1
 
-        self._combo_row(card_wt, 0, "Mode", "waitmode",
-            ["between", "constant", "constant_throughput"], "between",
-            help="between – random wait between Min and Max seconds\nconstant – fixed wait of Min seconds after each request\nconstant_throughput – maintain a fixed number of requests per second (Min = target RPS)")
-        self._field_row(card_wt, 1, "Min / Value (s)", "waitmin", "1", col=0, help="Minimum wait time in seconds (between mode),\nfixed wait time (constant mode),\nor target requests per second (constant_throughput mode).")
-
-        self._field_row(card_wt, 1, "Max (s)", "waitmax", "3", col=2,
-    help="Maximum wait time in seconds (between mode only).\nLocust picks a random value between Min and Max\nafter each task.")
-        self.entries["waitmode"].configure(command=self._on_waitmode_change)
-        self._on_waitmode_change("between")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -840,60 +855,26 @@ class LocustGUI(ctk.CTk):
                       ).grid(row=0, column=3, padx=(0, 16), pady=10)
 
         # ── Actions — fixed bottom ────────────────────────────────
-        bottom = ctk.CTkFrame(outer, fg_color="transparent")
-        bottom.grid(row=1, column=0, sticky="ew")
-        bottom.grid_columnconfigure(0, weight=1)
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)
 
-        self._card_header(bottom, "Actions", 0)
-        bf = ctk.CTkFrame(bottom, fg_color="transparent")
-        bf.grid(row=1, column=0, padx=16, pady=(4, 16), sticky="ew")
-        bf.grid_columnconfigure((0, 1), weight=1)
+        self.runbtn = ctk.CTkButton(bf, text="▶ Start Test", width=150, height=32,
+            fg_color=C_SUCCESS, hover_color=darken(C_SUCCESS, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.run_test
+        )
+        self.runbtn.grid(row=0, column=1, padx=4, pady=8)
 
-        run_card = ctk.CTkFrame(bf, fg_color=C_SUCCESS, corner_radius=10, cursor="hand2")
-        run_card.grid(row=0, column=0, padx=(0, 8), pady=4, sticky="ew")
-        run_card.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(run_card, text="▶", font=ctk.CTkFont(size=28),
-                     fg_color="transparent", text_color="white", cursor="hand2"
-                     ).grid(row=0, column=0, rowspan=2, padx=(14, 8), pady=12)
-        ctk.CTkLabel(run_card, text="Start Test",
-                     font=ctk.CTkFont(size=13, weight="bold"),
-                     fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
-                     ).grid(row=0, column=1, padx=(0, 12), pady=(10, 0), sticky="w")
-        ctk.CTkLabel(run_card, text="Locust + Reachability",
-                     font=ctk.CTkFont(size=10),
-                     fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
-                     ).grid(row=1, column=1, padx=(0, 12), pady=(0, 10), sticky="w")
-        self._run_card = run_card
-        self.after(50, lambda: bind_card(run_card, self.run_test, darken(C_SUCCESS, 25), C_SUCCESS))
-
-        stop_card = ctk.CTkFrame(bf, fg_color="#3a3a3a", corner_radius=10, cursor="arrow")
-        stop_card.grid(row=0, column=1, padx=(8, 0), pady=4, sticky="ew")
-        stop_card.grid_columnconfigure(1, weight=1)
-        self._stop_icon_lbl = ctk.CTkLabel(stop_card, text="⛔", font=ctk.CTkFont(size=24),
-                                            fg_color="transparent", text_color="#aaaaaa")
-        self._stop_icon_lbl.grid(row=0, column=0, rowspan=2, padx=(14, 8), pady=12)
-        self._stop_title_lbl = ctk.CTkLabel(stop_card, text="Stop Test",
-                                             font=ctk.CTkFont(size=13, weight="bold"),
-                                             fg_color="transparent", text_color="#aaaaaa", anchor="w")
-        self._stop_title_lbl.grid(row=0, column=1, padx=(0, 12), pady=(10, 0), sticky="w")
-        self._stop_sub_lbl = ctk.CTkLabel(stop_card, text="Terminate Locust process",
-                                           font=ctk.CTkFont(size=10),
-                                           fg_color="transparent", text_color="#666666", anchor="w")
-        self._stop_sub_lbl.grid(row=1, column=1, padx=(0, 12), pady=(0, 10), sticky="w")
-        self._stop_card    = stop_card
-        self._stop_enabled = False
+        self.stopbtn = ctk.CTkButton(bf, text="■ Stop", width=150, height=32,
+            fg_color="#3a3a3a", hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            state="disabled", command=self.stop_locust
+        )
+        self.stopbtn.grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
-    def _on_waitmode_change(self, value):
-        max_entry = self.entries["waitmax"]
-        max_label = self._labels["waitmax"]
-
-        if value == "between":
-            max_label.grid()
-            max_entry.grid()
-        else:
-            max_label.grid_remove()
-            max_entry.grid_remove()
 
     # ================================================================
     # STAGE HELPERS
@@ -926,25 +907,63 @@ class LocustGUI(ctk.CTk):
 
     def _render_stage_rows(self):
         for w in self._stages_frame.winfo_children():
-            w.destroy()
+            if int(w.grid_info().get("row", 0)) >= 1:
+                w.destroy()
         self._stage_rows = []
+
         for i, stage in enumerate(self._stages):
             row_entries = {}
+
+            # Duration, Users, Spawn rate
             for col, key in enumerate(["duration", "users", "spawn_rate"]):
                 e = ctk.CTkEntry(
-                    self._stages_frame, width=90, fg_color=C_ENTRY,
+                    self._stages_frame, fg_color=C_ENTRY,
                     font=ctk.CTkFont(size=12, family="Courier New")
                 )
                 e.insert(0, str(stage[key]))
-                e.grid(row=i, column=col, padx=(0, 6), pady=3, sticky="ew")
+                e.grid(row=i+1, column=col, padx=(0, 4), pady=3, sticky="ew")
                 e.bind("<FocusOut>", lambda event: self._update_stage_totals())
                 row_entries[key] = e
+
+            # Wait mode combobox
+            cb = ctk.CTkComboBox(
+                self._stages_frame,
+                values=["between", "constant", "constant_throughput"],
+                width=120, fg_color=C_ENTRY,
+                button_color=C_ACTIVE, button_hover_color=C_HOVER,
+                dropdown_fg_color=C_CARD, dropdown_text_color=C_TEXT,
+                font=ctk.CTkFont(size=11)
+            )
+            cb.set(stage.get("wait_mode", "between"))
+            cb.grid(row=i+1, column=3, padx=(0, 4), pady=3, sticky="ew")
+            row_entries["wait_mode"] = cb
+
+            # Min
+            e_min = ctk.CTkEntry(
+                self._stages_frame, width=50, fg_color=C_ENTRY,
+                font=ctk.CTkFont(size=12, family="Courier New")
+            )
+            e_min.insert(0, str(stage.get("wait_min", "1")))
+            e_min.grid(row=i+1, column=4, padx=(0, 4), pady=3, sticky="ew")
+            row_entries["wait_min"] = e_min
+
+            # Max
+            e_max = ctk.CTkEntry(
+                self._stages_frame, width=50, fg_color=C_ENTRY,
+                font=ctk.CTkFont(size=12, family="Courier New")
+            )
+            e_max.insert(0, str(stage.get("wait_max", "3")))
+            e_max.grid(row=i+1, column=5, padx=(0, 4), pady=3, sticky="ew")
+            row_entries["wait_max"] = e_max
+
+            # Delete button
             ctk.CTkButton(
                 self._stages_frame, text="✕", width=28, height=28,
                 fg_color="transparent", hover_color=C_DANGER,
                 font=ctk.CTkFont(size=11), corner_radius=4,
                 command=lambda idx=i: self._del_stage_row(idx)
-            ).grid(row=i, column=3, padx=(2, 0), pady=3)
+            ).grid(row=i+1, column=6, padx=(2, 0), pady=3)
+
             self._stage_rows.append(row_entries)
         self._update_stage_totals()
 
@@ -956,11 +975,13 @@ class LocustGUI(ctk.CTk):
                     "duration":   int(row["duration"].get()),
                     "users":      int(row["users"].get()),
                     "spawn_rate": int(row["spawn_rate"].get()),
+                    "wait_mode":  row["wait_mode"].get(),
+                    "wait_min":   float(row["wait_min"].get()),
+                    "wait_max":   float(row["wait_max"].get()),
                 })
             except ValueError:
                 pass
         return stages
-
     def _update_stage_totals(self):
         try:
             stages    = self._get_stages()
@@ -992,6 +1013,7 @@ class LocustGUI(ctk.CTk):
         outer.grid_columnconfigure(0, weight=1)
         outer.grid_rowconfigure(0, weight=1)
         outer.grid_rowconfigure(1, weight=0)
+        outer.grid_rowconfigure(2, weight=0)
 
         scroll = make_scroll_frame(outer)
         scroll.grid(row=0, column=0, sticky="nsew")
@@ -1077,42 +1099,27 @@ class LocustGUI(ctk.CTk):
         self.cert_pass.grid(row=1, column=1, columnspan=2, padx=(0, 16), pady=(0, 12), sticky="ew")
 
         # ── Buttons row ───────────────────────────────────────────
-        btn_frame = ctk.CTkFrame(outer, fg_color="transparent")
-        btn_frame.grid(row=1, column=0, padx=16, pady=(12, 16), sticky="ew")
-        btn_frame.grid_columnconfigure(0, weight=1)
-        btn_frame.grid_columnconfigure(1, weight=1)
+        # separator
+        ctk.CTkFrame(outer, height=1, fg_color=darken(C_CONTENT, 15)).grid(
+            row=1, column=0, sticky="ew"
+        )
 
-        gen_card = ctk.CTkFrame(btn_frame, fg_color=C_PURPLE, corner_radius=10, cursor="hand2")
-        gen_card.grid(row=0, column=0, padx=(0, 8), pady=4, sticky="ew")
-        gen_card.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(gen_card, text="📄", font=ctk.CTkFont(size=26),
-                     fg_color="transparent", text_color="white", cursor="hand2"
-                     ).grid(row=0, column=0, rowspan=2, padx=(14, 8), pady=12, sticky="w")
-        ctk.CTkLabel(gen_card, text="Generate Report",
-                     font=ctk.CTkFont(size=13, weight="bold"),
-                     fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
-                     ).grid(row=0, column=1, padx=(0, 12), pady=(10, 0), sticky="w")
-        ctk.CTkLabel(gen_card, text="Export results to PDF",
-                     font=ctk.CTkFont(size=10),
-                     fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
-                     ).grid(row=1, column=1, padx=(0, 12), pady=(0, 10), sticky="w")
-        self.after(50, lambda: bind_card(gen_card, self.generate_report, darken(C_PURPLE, 25), C_PURPLE))
+        bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
+        bf.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
+        bf.grid_propagate(False)
+        bf.grid_columnconfigure(0, weight=1)
 
-        del_card = ctk.CTkFrame(btn_frame, fg_color=C_DANGER, corner_radius=10, cursor="hand2")
-        del_card.grid(row=0, column=1, padx=(8, 0), pady=4, sticky="ew")
-        del_card.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(del_card, text="🗑", font=ctk.CTkFont(size=26),
-                     fg_color="transparent", text_color="white", cursor="hand2"
-                     ).grid(row=0, column=0, rowspan=2, padx=(14, 8), pady=12, sticky="w")
-        ctk.CTkLabel(del_card, text="Delete Data",
-                     font=ctk.CTkFont(size=13, weight="bold"),
-                     fg_color="transparent", text_color="white", anchor="w", cursor="hand2"
-                     ).grid(row=0, column=1, padx=(0, 12), pady=(10, 0), sticky="w")
-        ctk.CTkLabel(del_card, text="Clear CSV & IP pool",
-                     font=ctk.CTkFont(size=10),
-                     fg_color="transparent", text_color="#b0b8c8", anchor="w", cursor="hand2"
-                     ).grid(row=1, column=1, padx=(0, 12), pady=(0, 10), sticky="w")
-        self.after(50, lambda: bind_card(del_card, self._delete_data, darken(C_DANGER, 25), C_DANGER))
+        ctk.CTkButton(bf, text="📄 Generate Report", width=150, height=32,
+            fg_color=C_PURPLE, hover_color=darken(C_PURPLE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._generate_report
+        ).grid(row=0, column=1, padx=4, pady=8)
+
+        ctk.CTkButton(bf, text="🗑 Delete Data", width=110, height=32,
+            fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._delete_data
+        ).grid(row=0, column=2, padx=(4, 16), pady=8)
 
         return outer
 
@@ -1162,7 +1169,7 @@ class LocustGUI(ctk.CTk):
                 deleted.append(os.path.basename(f))
             except Exception as e:
                 errors.append(f"{os.path.basename(f)}: {e}")
-        for fname in ["ip_pool.txt", "test_config.csv"]:
+        for fname in ["test_config.csv"]:
             fpath = os.path.join(BASE_DIR, fname)
             if os.path.exists(fpath):
                 try:
@@ -1233,7 +1240,7 @@ class LocustGUI(ctk.CTk):
         outer = ctk.CTkFrame(parent, fg_color="transparent", corner_radius=0)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
-        outer.grid_rowconfigure(2, weight=1)
+        outer.grid_rowconfigure(2, weight=0)
 
         toolbar = ctk.CTkFrame(outer, fg_color=C_CARD, corner_radius=0, height=44)
         toolbar.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 1))
@@ -1332,7 +1339,7 @@ class LocustGUI(ctk.CTk):
                          ).grid(row=0, column=1, padx=8, sticky="w")
 
             sign_text  = "✅ Signed" if signed else "❌ No"
-            sign_color = C_SUCCESS  if signed else C_DANGER
+            sign_color = "#00cc00"  if signed else "#ff1a1a"
             ctk.CTkLabel(row_frame, text=sign_text,
                          font=ctk.CTkFont(size=16), text_color=sign_color, anchor="w"
                          ).grid(row=0, column=2, padx=8, sticky="w")
@@ -1672,27 +1679,43 @@ class LocustGUI(ctk.CTk):
     # ================================================================
 
     def run_test(self):
-        self._run_card.configure(fg_color=darken(C_SUCCESS, 30), cursor="arrow")
         self._set_stop_enabled(True)
         threading.Thread(target=self._run_test_thread, daemon=True).start()
 
     def _set_stop_enabled(self, enabled):
         self._stop_enabled = enabled
         if enabled:
-            self._stop_card.configure(fg_color=C_DANGER, cursor="hand2")
-            self._stop_icon_lbl.configure(text_color="white",   cursor="hand2")
-            self._stop_title_lbl.configure(text_color="white",  cursor="hand2")
-            self._stop_sub_lbl.configure(text_color="#b0b8c8",  cursor="hand2")
-            bind_card(self._stop_card, self.stop_locust, darken(C_DANGER, 25), C_DANGER)
+            self.runbtn.configure(
+                fg_color="#B7950B",
+                hover_color="#B7950B",
+                text="⏳ Running...",
+                text_color="white",
+                state="normal",
+                command=lambda: None
+            )
+            self.stopbtn.configure(
+                fg_color=C_DANGER,
+                hover_color=darken(C_DANGER, 25),
+                text_color="white",
+                state="normal",          # ← normal, klikateľný
+                command=self.stop_locust # ← správny command
+            )
         else:
-            self._stop_card.configure(fg_color="#3a3a3a", cursor="arrow")
-            self._stop_icon_lbl.configure(text_color="#aaaaaa",  cursor="arrow")
-            self._stop_title_lbl.configure(text_color="#aaaaaa", cursor="arrow")
-            self._stop_sub_lbl.configure(text_color="#666666",   cursor="arrow")
-            for w in [self._stop_card] + list(self._stop_card.winfo_children()):
-                w.unbind("<Button-1>")
-                w.unbind("<Enter>")
-                w.unbind("<Leave>")
+            self.runbtn.configure(
+                fg_color=C_SUCCESS,
+                hover_color=darken(C_SUCCESS, 25),
+                text="▶ Start Test",
+                text_color="white",
+                state="normal",
+                command=self.run_test
+            )
+            self.stopbtn.configure(
+                fg_color="#3a3a3a",
+                hover_color="#3a3a3a",   # ← hover = rovnaká, nech nevyzerá klikateľne
+                text_color="#aaaaaa",
+                state="normal",
+                command=lambda: None     # ← prázdny command keď test nebežím
+            )
 
     def _run_test_thread(self):
         try:
@@ -1758,7 +1781,6 @@ class LocustGUI(ctk.CTk):
                 self._network_monitor.stop()
                 self._network_monitor = None
                 self.write_log("📡 Network monitor stopped")
-            self._run_card.configure(fg_color=C_SUCCESS, cursor="hand2")
             self._set_stop_enabled(False)
 
     def stop_locust(self):
@@ -1768,7 +1790,6 @@ class LocustGUI(ctk.CTk):
             self.locust_process.terminate()
             self.write_log("⛔ Locust test stopped by user")
             self._reach_stop_event.set()
-        self._run_card.configure(fg_color=C_SUCCESS, cursor="hand2")
         self._set_stop_enabled(False)
 
     def _run_reachability(self, duration, interval):
@@ -1787,7 +1808,7 @@ class LocustGUI(ctk.CTk):
     # REPORT
     # ================================================================
 
-    def generate_report(self):
+    def _generate_report(self):
         threading.Thread(target=self._generate_report_thread, daemon=True).start()
 
     def _generate_report_thread(self):

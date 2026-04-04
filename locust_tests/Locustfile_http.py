@@ -24,19 +24,6 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
 _local = threading.local()
 
-WAIT_MODE = os.getenv("WAIT_MODE", "between")
-WAIT_MIN  = float(os.getenv("WAIT_MIN", "1"))
-WAIT_MAX  = float(os.getenv("WAIT_MAX", "3"))
-
-def build_wait_time():
-    if WAIT_MODE == "constant":
-        return constant(WAIT_MIN)
-    elif WAIT_MODE == "constant_throughput":
-        return constant_throughput(WAIT_MIN)
-    else:
-        return between(WAIT_MIN, WAIT_MAX)
-
-
 def _source_bound_create_connection(address, timeout=None,
                                     source_address=None, socket_options=None):
     params = getattr(_local, "source_params", None)
@@ -281,7 +268,21 @@ def on_test_stop(environment, **kwargs):
         print(f"Failed to save metadata: {e}")
 
 
+# ============================================================
+#  WAIT TIME BUILDER
+# ============================================================
 
+def build_wait_time():
+    mode  = os.getenv("WAIT_MODE", "between")
+    w_min = float(os.getenv("WAIT_MIN", "1"))
+    w_max = float(os.getenv("WAIT_MAX", "3"))
+
+    if mode == "constant":
+        return constant(w_min)
+    elif mode == "constant_throughput":
+        return constant_throughput(w_min)
+    else:  # between (default)
+        return between(w_min, w_max)
 # ============================================================
 #  SOURCE IP ADAPTER
 # ============================================================
@@ -330,6 +331,7 @@ class DynamicShape(LoadTestShape):
             if t < stage["duration"]:
                 return stage["users"], stage["spawn_rate"]
         return None
+
 
 # ============================================================
 #  USER CLASS
