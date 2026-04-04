@@ -192,10 +192,15 @@ def compute_duration(start_str, end_str):
                      datetime.combine(datetime.today(), start_dt.time()))
         total = delta.total_seconds()
         m, s  = divmod(total, 60)
-        return f"{int(m)} min {s:.1f} s" if m >= 1 else f"{s:.1f} s"
+        h, m  = divmod(int(m), 60)
+        if h > 0:
+            return f"{h}h {m}m"
+        elif m > 0:
+            return f"{m}m {int(s)}s"
+        else:
+            return f"{s:.1f}s"
     except Exception:
         return "Unknown"
-
 
 # ================================================================
 # TABLE HELPERS
