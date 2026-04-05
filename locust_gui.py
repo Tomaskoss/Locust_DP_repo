@@ -606,6 +606,21 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2, help="Label describing the test scenario.\nAppears in the generated PDF report header.")
         self._field_row(card, 1, "Source ports", "src_ports", "",          col=2,
                         ph="e.g. 1024-65535", help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
+                        
+                        # SSL checkbox
+        self._ssl_verify_var = ctk.BooleanVar(value=os.getenv("SSL_VERIFY", "true").lower() != "false")
+        ssl_cb = ctk.CTkCheckBox(
+            card,
+            text="Verify SSL certificate",
+            variable=self._ssl_verify_var,
+            font=ctk.CTkFont(size=13),
+            text_color=C_TEXT,
+            fg_color=C_ACTIVE,
+            hover_color=C_HOVER,
+            border_color=C_MUTED,
+        )
+        ssl_cb.grid(row=2, column=0, columnspan=2, padx=(16, 8), pady=(0, 12), sticky="w")
+        CTkToolTip(ssl_cb, message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates", delay=0.3, x_offset=10, y_offset=-10)
 
         row = self._card_header(scroll, "IP Pool", row)
         card2 = self._card(scroll, row); row += 1
@@ -956,6 +971,16 @@ class LocustGUI(ctk.CTk):
             e_max.grid(row=i+1, column=5, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_max"] = e_max
 
+            # Skry Max ak mode nie je "between"
+            def _on_wait_mode_change(mode, entry=e_max):
+                if mode == "between":
+                    entry.grid()
+                else:
+                    entry.grid_remove()
+
+            _on_wait_mode_change(stage.get("wait_mode", "between"))
+            cb.configure(command=_on_wait_mode_change)
+
             # Delete button
             ctk.CTkButton(
                 self._stages_frame, text="✕", width=28, height=28,
@@ -969,18 +994,23 @@ class LocustGUI(ctk.CTk):
 
     def _get_stages(self):
         stages = []
-        for row in self._stage_rows:
+        for i, row in enumerate(self._stage_rows):
             try:
+                wait_mode    = row["wait_mode"].get()
+                wait_max_raw = row["wait_max"].get().strip()
+                wait_min     = float(row["wait_min"].get().strip() or 1)
+                wait_max     = float(wait_max_raw) if wait_max_raw else wait_min
+
                 stages.append({
-                    "duration":   int(row["duration"].get()),
-                    "users":      int(row["users"].get()),
-                    "spawn_rate": int(row["spawn_rate"].get()),
-                    "wait_mode":  row["wait_mode"].get(),
-                    "wait_min":   float(row["wait_min"].get()),
-                    "wait_max":   float(row["wait_max"].get()),
+                    "duration":   int(row["duration"].get().strip()   or 0),
+                    "users":      int(row["users"].get().strip()      or 0),
+                    "spawn_rate": int(row["spawn_rate"].get().strip() or 1),
+                    "wait_mode":  wait_mode,
+                    "wait_min":   wait_min,
+                    "wait_max":   wait_max,
                 })
-            except ValueError:
-                pass
+            except (ValueError, KeyError) as e:
+                print(f"[WARN] Stage row {i+1} skipped: {e}")
         return stages
     def _update_stage_totals(self):
         try:
@@ -1497,9 +1527,7 @@ class LocustGUI(ctk.CTk):
     def _get_source_range(self):
         start = self._get_ip_start()
         end   = self._get_ip_end()
-        if self._active_ip_version() == "ipv6":
-            return f"{start} - {end}"
-        return f"{start}-{end.split('.')[-1]}"
+        return f"{start} - {end}"  
 
     # ================================================================
     # GENERIC HELPERS
@@ -1582,11 +1610,20 @@ class LocustGUI(ctk.CTk):
 
         src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
+        # Get Ip pool 
+        pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
+        pool_count = 0
+        pool_ips   = ""
+        if os.path.exists(pool_file):
+            with open(pool_file) as f:
+                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+            pool_count = len(lines)
+            pool_ips   = f"{lines[0]} - {lines[-1]}" if lines else ""
 
         with open(config_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "target", "target_clean", "target_ip", "ip_start", "ip_end",
-                "source_range", "src_ports", "ip_version", "interface",
+                "source_range", "ip_pool_count", "ip_pool_range", "src_ports", "ip_version", "interface",
                 "processes", "stop_timeout",
                 "reach_interval", "reach_timeout", "reach_src_ip", "reach_interface",
                 "reach_threshold", "test_type",
@@ -1599,6 +1636,8 @@ class LocustGUI(ctk.CTk):
                 "ip_start":         self._get_ip_start(),
                 "ip_end":           self._get_ip_end(),
                 "source_range":     self._get_source_range(),
+                "ip_pool_count":    pool_count,
+                "ip_pool_range":    pool_ips,
                 "src_ports":        self.get("src_ports"),
                 "ip_version":       ip_ver,
                 "interface":        self.get("interface"),
@@ -1621,6 +1660,8 @@ class LocustGUI(ctk.CTk):
                 target_clean    = str(cfg.get("target_clean",    self._get_target_clean()))
                 target_ip       = str(cfg.get("target_ip",       target_clean))
                 source_range    = str(cfg.get("source_range",    self._get_source_range()))
+                ip_pool_count = str(cfg.get("ip_pool_count", ""))
+                ip_pool_range = str(cfg.get("ip_pool_range", ""))
                 interface       = str(cfg.get("interface",       self.get("interface")))
                 reach_src_ip    = str(cfg.get("reach_src_ip", self.get("reach_src_ip")))
                 reach_threshold = float(cfg.get("reach_threshold", 50))
@@ -1628,7 +1669,7 @@ class LocustGUI(ctk.CTk):
                 processes       = str(cfg.get("processes",       self.get("processes")))
                 stop_timeout    = str(cfg.get("stop_timeout",    self.get("stop_timeout") or "60"))
                 self.write_log(f"✓ Params: {target_clean} | {source_range} | threshold={reach_threshold}%")
-                return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg, processes, stop_timeout, reach_src_ip
+                return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg, processes, stop_timeout, reach_src_ip, ip_pool_count, ip_pool_range
             except Exception as e:
                 self.write_log(f"⚠ Error reading config: {e}")
         return (
@@ -1719,7 +1760,12 @@ class LocustGUI(ctk.CTk):
 
     def _run_test_thread(self):
         try:
-            stages   = self._save_stages()
+            stages = self._save_stages()
+
+            if not stages:
+                self.write_log("✗ No valid stages — check Duration/Users/Spawn rate fields")
+                return
+
             run_time = stages[-1]["duration"]
             interval = int(self.get("reach_interval") or 5)
 
@@ -1814,7 +1860,8 @@ class LocustGUI(ctk.CTk):
     def _generate_report_thread(self):
         try:
             (target_clean, target_ip, source_range, interface,
-             reach_threshold, test_type_cfg, processes, stop_timeout, reach_src_ip) = self._load_test_config(BASE_DIR)
+             reach_threshold, test_type_cfg, processes, stop_timeout,
+             reach_src_ip, ip_pool_count, ip_pool_range) = self._load_test_config(BASE_DIR)
 
             report_name = self._report_name_entry.get().strip() or "Locust_Report"
             if not report_name.endswith(".pdf"):
@@ -1837,6 +1884,8 @@ class LocustGUI(ctk.CTk):
                 comment         = self.get_comment(),
                 target_ip       = target_ip,
                 source_ip       = source_range,
+                ip_pool_count = ip_pool_count,
+                ip_pool_range = ip_pool_range,
                 interface       = interface,
                 reach_threshold = reach_threshold / 100,
                 test_type       = test_type_cfg,
@@ -1890,3 +1939,4 @@ class LocustGUI(ctk.CTk):
 if __name__ == "__main__":
     app = LocustGUI()
     app.mainloop()
+

@@ -558,6 +558,7 @@ def create_pdf_report(stats_file, history_file, output_file,
                       target_ip=None, source_ip=None, interface=None,
                       reach_threshold=0.5, test_type=None,
                       src_ports=None, reach_src_ip=None,
+                      ip_pool_count=None, ip_pool_range=None,
                       sign=False, p12_path=None, p12_pass=b"yourpassword"):
 
     if meta_file    is None: meta_file    = META_FILE
@@ -662,6 +663,8 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
         [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
         [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
+        [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
+        [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
         [Paragraph("Source ports", S["label"]), Paragraph(str(src_ports) if src_ports else _get_os_port_range(), S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),

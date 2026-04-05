@@ -369,6 +369,12 @@ class MyUser(HttpUser):
         self.adapter = SourceIPAdapter(self.source_ip, self.source_port)
         self.client.mount("http://",  self.adapter)
         self.client.mount("https://", self.adapter)
+        
+        ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
+        self.client.verify = ssl_verify
+        if not ssl_verify:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     @task
     def index(self):
