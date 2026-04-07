@@ -249,7 +249,7 @@ class LocustGUI(ctk.CTk):
 
     NAV_ITEMS = [
         ("⚙",  "Config"),
-        ("🌐", "HTTP"),
+        ("🌐", "HTTP/S"),
         ("📄", "Generate Report"),
         ("📋", "Reports"),
     ]
