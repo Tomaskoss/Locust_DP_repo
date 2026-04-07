@@ -13,6 +13,7 @@ import time as _time
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
+import urllib3
 
 
 # ============================================================
@@ -26,6 +27,22 @@ PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
+
+
+# ============================================================
+#  SSL WARNINGS — raz pri štarte procesu, nie per-user
+# ============================================================
+
+if os.getenv("SSL_VERIFY", "true").lower() == "false":
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# ============================================================
+#  TIMEOUT CONFIG
+# ============================================================
+
+CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "5"))
+READ_TIMEOUT    = float(os.getenv("READ_TIMEOUT", "15"))
 
 
 # ============================================================
@@ -170,7 +187,6 @@ start_time  = None
 target_host = None
 target_ip   = None
 
-# Worker-side stage config (Bug 2 fix)
 _worker_stages     = None
 _worker_test_start = None
 
@@ -180,7 +196,6 @@ def on_test_start(environment, **kwargs):
     global start_time, target_host, target_ip
     global _worker_stages, _worker_test_start
 
-    # --- Každý proces (master aj worker) si načíta stages pre wait_time ---
     _worker_test_start = _time.time()
     try:
         stages_path = os.path.join(BASE_DIR, "stages.json")
@@ -190,14 +205,12 @@ def on_test_start(environment, **kwargs):
     except Exception as e:
         print(f"[WARN] Could not load stages.json for wait_time: {e}")
 
-    # --- Nasledujúce beží IBA na master procese ---
     if isinstance(environment.runner, WorkerRunner):
         return
 
     start_time  = datetime.now()
     target_host = environment.host or "Unknown"
 
-    # Skús načítať target_ip z test_config.csv (vytvorí GUI)
     target_ip = None
     try:
         with open(os.path.join(BASE_DIR, "test_config.csv"), newline="") as f:
@@ -208,7 +221,6 @@ def on_test_start(environment, **kwargs):
     except Exception:
         pass
 
-    # Fallback — resolvuj sám podľa IP_VERSION z config.env
     if not target_ip:
         try:
             clean_host = (
@@ -256,7 +268,6 @@ def on_test_start(environment, **kwargs):
 def on_test_stop(environment, **kwargs):
     global start_time, target_host, target_ip
 
-    # Beží IBA na master procese
     if isinstance(environment.runner, WorkerRunner):
         return
 
@@ -302,7 +313,12 @@ class SourceIPAdapter(HTTPAdapter):
         self.source_ip   = source_ip
         self.source_port = source_port
         self._use_v6     = is_ipv6(source_ip)
-        super().__init__(**kwargs)
+        super().__init__(
+            pool_connections=1,
+            pool_maxsize=1,
+            max_retries=0,
+            **kwargs
+        )
 
     def send(self, request, **kwargs):
         _local.source_params = (self.source_ip, self.source_port, self._use_v6)
@@ -354,7 +370,6 @@ class MyUser(HttpUser):
     _port_pool = None
     _pool_lock = threading.Lock()
 
-    # --- Bug 2 fix: každý worker si sám vypočíta wait podľa času ---
     def wait_time(self):
         if _worker_stages and _worker_test_start is not None:
             elapsed = _time.time() - _worker_test_start
@@ -369,7 +384,7 @@ class MyUser(HttpUser):
                         return (1.0 / wmin) if wmin > 0 else 1.0
                     else:
                         return random.uniform(wmin, wmax)
-        return random.uniform(1.0, 3.0)  # fallback
+        return random.uniform(1.0, 3.0)
 
     @classmethod
     def get_ip_pool(cls):
@@ -398,13 +413,15 @@ class MyUser(HttpUser):
         self.client.mount("http://",  self.adapter)
         self.client.mount("https://", self.adapter)
 
-        ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
-        self.client.verify = ssl_verify
-        if not ssl_verify:
-            import urllib3
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        self.client.verify  = os.getenv("SSL_VERIFY", "true").lower() != "false"
+        self.client.timeout = (CONNECT_TIMEOUT, READ_TIMEOUT)
 
-    # --- Bug 1 fix: success/failure je VNÚTRI with bloku ---
+    def on_stop(self):
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
     @task
     def index(self):
         with self.client.get("/", catch_response=True) as resp:
@@ -418,9 +435,7 @@ class MyUser(HttpUser):
                 self._logged_port = True
 
             code = resp.status_code
-            if code in (200, 201):
-                resp.success()
-            elif code in (301, 302, 303, 307, 308):
+            if code in (200, 201, 301, 302, 303, 307, 308):
                 resp.success()
             elif code == 429:
                 resp.failure(f"Rate limited (IP: {self.source_ip})")
@@ -428,12 +443,10 @@ class MyUser(HttpUser):
                 resp.failure(f"IP blocked: {self.source_ip}")
             elif code == 401:
                 resp.failure("Unauthorized")
-            elif code == 503:
-                resp.failure("Service unavailable")
-            elif code == 500:
-                resp.failure("Server error 500")
+            elif code in (500, 503):
+                resp.failure(f"Server error {code}")
             elif code == 0:
-                resp.failure("Connection error")
-            else:
-                resp.failure(f"Unexpected: {code}")
+                error_cls = type(resp.error).__name__ if resp.error else "Unknown"
+                cause     = str(getattr(resp.error, "args", ["?"])[0])[:120]
+                resp.failure(f"[{error_cls}] IP:{self.source_ip} → {cause}")
 
