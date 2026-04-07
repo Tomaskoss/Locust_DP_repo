@@ -1,4 +1,4 @@
-from locust import events, HttpUser, task, between, LoadTestShape, constant, constant_throughput
+from locust import events, HttpUser, task, LoadTestShape
 from locust.runners import WorkerRunner
 from datetime import datetime
 from dotenv import load_dotenv
@@ -9,9 +9,15 @@ import random
 import threading
 import sys
 import json
+import time as _time
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 import urllib3.util.connection as urllib3_conn
+
+
+# ============================================================
+#  PATHS
+# ============================================================
 
 BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR       = os.path.join(BASE_DIR, "data")
@@ -19,10 +25,15 @@ IP_POOL_FILE   = os.path.join(BASE_DIR, "ip_pool.txt")
 PORT_POOL_FILE = os.path.join(BASE_DIR, "port_pool.txt")
 METADATA_FILE  = os.path.join(DATA_DIR, "report_metadata.csv")
 
-
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
+
+# ============================================================
+#  SOURCE-IP SOCKET PATCH
+# ============================================================
+
 _local = threading.local()
+
 
 def _source_bound_create_connection(address, timeout=None,
                                     source_address=None, socket_options=None):
@@ -54,7 +65,7 @@ def _source_bound_create_connection(address, timeout=None,
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         except (AttributeError, OSError):
-            pass  # Windows alebo starší kernel
+            pass
 
         try:
             if use_v6:
@@ -64,7 +75,6 @@ def _source_bound_create_connection(address, timeout=None,
             sock.settimeout(timeout)
             sock.connect(sockaddr)
             _local.last_used_port = sock.getsockname()[1]
-
             return sock
         except Exception as e:
             sock.close()
@@ -84,7 +94,6 @@ if not hasattr(urllib3_conn, "_source_patch_applied"):
 # ============================================================
 
 def is_ipv6(ip):
-    """Vráti True ak je ip platná IPv6 adresa."""
     try:
         socket.inet_pton(socket.AF_INET6, ip)
         return True
@@ -95,21 +104,16 @@ def is_ipv6(ip):
 def parse_ports(port_str):
     if not port_str or not port_str.strip():
         return None
-
     result = []
-
     for part in port_str.split(","):
         part = part.strip()
-
         if "-" in part:
             try:
                 parts = part.split("-", maxsplit=1)
                 start, end = int(parts[0]), int(parts[1])
-
                 if start > end:
                     print(f"WARNING: reversed port range '{part}', skipping")
                     continue
-
                 result.extend(range(start, end + 1))
             except (ValueError, IndexError):
                 print(f"WARNING: invalid port range '{part}', skipping")
@@ -118,7 +122,6 @@ def parse_ports(port_str):
                 result.append(int(part))
             except ValueError:
                 print(f"WARNING: invalid port '{part}', skipping")
-
     return result or None
 
 
@@ -157,25 +160,44 @@ def load_port_pool():
         print(f"WARNING: Failed to load port pool: {e}")
         return None
 
+
 # ============================================================
 #  TEST METADATA & EVENTS
 # ============================================================
 
-TEST_TYPE       = os.getenv("TEST_TYPE", "Locust Load Test")
-start_time      = None
-target_host     = None
-target_ip       = None
+TEST_TYPE   = os.getenv("TEST_TYPE", "Locust Load Test")
+start_time  = None
+target_host = None
+target_ip   = None
+
+# Worker-side stage config (Bug 2 fix)
+_worker_stages     = None
+_worker_test_start = None
+
 
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):
     global start_time, target_host, target_ip
+    global _worker_stages, _worker_test_start
+
+    # --- Každý proces (master aj worker) si načíta stages pre wait_time ---
+    _worker_test_start = _time.time()
+    try:
+        stages_path = os.path.join(BASE_DIR, "stages.json")
+        with open(stages_path) as f:
+            _worker_stages = json.load(f)
+        print(f"Loaded {len(_worker_stages)} stages from stages.json")
+    except Exception as e:
+        print(f"[WARN] Could not load stages.json for wait_time: {e}")
+
+    # --- Nasledujúce beží IBA na master procese ---
     if isinstance(environment.runner, WorkerRunner):
         return
 
     start_time  = datetime.now()
     target_host = environment.host or "Unknown"
 
-    #  Skús načítať z test_config.csv (vytvorí GUI)
+    # Skús načítať target_ip z test_config.csv (vytvorí GUI)
     target_ip = None
     try:
         with open(os.path.join(BASE_DIR, "test_config.csv"), newline="") as f:
@@ -186,7 +208,7 @@ def on_test_start(environment, **kwargs):
     except Exception:
         pass
 
-    #  Fallback — resolvuj sám podľa IP_VERSION z config.env
+    # Fallback — resolvuj sám podľa IP_VERSION z config.env
     if not target_ip:
         try:
             clean_host = (
@@ -229,9 +251,12 @@ def on_test_start(environment, **kwargs):
     print(f"Target: {target_host} ({target_ip})")
     print(f"{'='*50}\n")
 
+
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
     global start_time, target_host, target_ip
+
+    # Beží IBA na master procese
     if isinstance(environment.runner, WorkerRunner):
         return
 
@@ -246,16 +271,19 @@ def on_test_stop(environment, **kwargs):
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(METADATA_FILE, "w", newline="") as csvfile:
-            writer = csv.writer(csvfile)
+            writer     = csv.writer(csvfile)
             ip_version = os.getenv("IP_VERSION", "ipv4").lower()
 
             if ip_version == "ipv6":
                 if os.getenv("IPV6_MODE", "range").lower() == "prefix":
                     used_ips_val = os.getenv("IP6_PREFIX", "Unknown")
                 else:
-                    used_ips_val = os.getenv("IP6_START", "") + " - " + os.getenv("IP6_END", "")
+                    used_ips_val = (os.getenv("IP6_START", "")
+                                    + " - " + os.getenv("IP6_END", ""))
             else:
-                used_ips_val = os.getenv("IP_START", "") + " - " + os.getenv("IP_END", "")
+                used_ips_val = (os.getenv("IP_START", "")
+                                + " - " + os.getenv("IP_END", ""))
+
             writer.writerow(["start_time", "end_time", "duration", "test_type",
                              "target_host", "target_ip", "used_ips"])
             writer.writerow([start_time, end_time, str(duration), TEST_TYPE,
@@ -263,14 +291,6 @@ def on_test_stop(environment, **kwargs):
         print(f"Metadata saved to {METADATA_FILE}")
     except Exception as e:
         print(f"Failed to save metadata: {e}")
-
-
-# ============================================================
-#  DYNAMIC WAIT CONFIG  (aktualizuje DynamicShape.tick())
-# ============================================================
-
-_current_wait_cfg  = {"mode": "between", "min": 1.0, "max": 3.0}
-_wait_cfg_lock     = threading.Lock()
 
 
 # ============================================================
@@ -288,7 +308,6 @@ class SourceIPAdapter(HTTPAdapter):
         _local.source_params = (self.source_ip, self.source_port, self._use_v6)
         try:
             response = super().send(request, **kwargs)
-            # Po prvom spojení aktualizuj reálny port
             actual = getattr(_local, "last_used_port", None)
             if actual and actual != self.source_port:
                 self.source_port = actual
@@ -299,15 +318,16 @@ class SourceIPAdapter(HTTPAdapter):
             except AttributeError:
                 pass
 
+
 # ============================================================
-#  DYNAMIC SHAPE
+#  DYNAMIC SHAPE  (beží len na master procese)
 # ============================================================
 
 class DynamicShape(LoadTestShape):
     _stages = None
 
     def _load(self):
-        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stages.json")
+        path = os.path.join(BASE_DIR, "stages.json")
         with open(path) as f:
             self._stages = json.load(f)
 
@@ -321,13 +341,9 @@ class DynamicShape(LoadTestShape):
         t = self.get_run_time()
         for stage in self._stages:
             if t < stage["duration"]:
-                # Aktualizuj globálny wait config podľa aktuálneho stagu
-                with _wait_cfg_lock:
-                    _current_wait_cfg["mode"] = stage.get("waitmode", "between")
-                    _current_wait_cfg["min"]  = float(stage.get("waitmin", 1.0))
-                    _current_wait_cfg["max"]  = float(stage.get("waitmax", 3.0))
                 return stage["users"], stage["spawn_rate"]
         return None
+
 
 # ============================================================
 #  USER CLASS
@@ -338,18 +354,22 @@ class MyUser(HttpUser):
     _port_pool = None
     _pool_lock = threading.Lock()
 
+    # --- Bug 2 fix: každý worker si sám vypočíta wait podľa času ---
     def wait_time(self):
-        with _wait_cfg_lock:
-            mode = _current_wait_cfg["mode"]
-            wmin = _current_wait_cfg["min"]
-            wmax = _current_wait_cfg["max"]
-
-        if mode == "constant":
-            return wmin
-        elif mode == "constant_throughput":
-            return (1.0 / wmin) if wmin > 0 else 1.0
-        else:  # between (default)
-            return random.uniform(wmin, wmax)
+        if _worker_stages and _worker_test_start is not None:
+            elapsed = _time.time() - _worker_test_start
+            for stage in _worker_stages:
+                if elapsed < stage["duration"]:
+                    mode = stage.get("wait_mode", "between")
+                    wmin = float(stage.get("wait_min", 1.0))
+                    wmax = float(stage.get("wait_max", 3.0))
+                    if mode == "constant":
+                        return wmin
+                    elif mode == "constant_throughput":
+                        return (1.0 / wmin) if wmin > 0 else 1.0
+                    else:
+                        return random.uniform(wmin, wmax)
+        return random.uniform(1.0, 3.0)  # fallback
 
     @classmethod
     def get_ip_pool(cls):
@@ -372,7 +392,7 @@ class MyUser(HttpUser):
         self.source_ip   = random.choice(ip_pool)
         port_pool        = self.get_port_pool()
         self.source_port = random.choice(port_pool) if port_pool else 0
-        self._logged_port = False  # ← flag
+        self._logged_port = False
 
         self.adapter = SourceIPAdapter(self.source_ip, self.source_port)
         self.client.mount("http://",  self.adapter)
@@ -384,11 +404,11 @@ class MyUser(HttpUser):
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+    # --- Bug 1 fix: success/failure je VNÚTRI with bloku ---
     @task
     def index(self):
-        if not self._logged_port:
-            # Prvý request — po connect() je v adapter.source_port reálny port
-            with self.client.get("/", catch_response=True) as resp:
+        with self.client.get("/", catch_response=True) as resp:
+            if not self._logged_port:
                 actual_port = self.adapter.source_port or "OS ephemeral"
                 print(
                     f"User started → IP: {self.source_ip} "
@@ -396,27 +416,24 @@ class MyUser(HttpUser):
                     f"Port: {actual_port}"
                 )
                 self._logged_port = True
-                code = resp.status_code
-        else:
-            with self.client.get("/", catch_response=True) as resp:
-                code = resp.status_code
 
-        if code in (200, 201):
-            resp.success()
-        elif code in (301, 302, 303, 307, 308):
-            resp.success()
-        elif code == 429:
-            resp.failure(f"Rate limited (IP: {self.source_ip})")
-        elif code == 403:
-            resp.failure(f"IP blocked: {self.source_ip}")
-        elif code == 401:
-            resp.failure("Unauthorized")
-        elif code == 503:
-            resp.failure("Service unavailable")
-        elif code == 500:
-            resp.failure("Server error 500")
-        elif code == 0:
-            resp.failure("Connection error")
-        else:
-            resp.failure(f"Unexpected: {code}")
+            code = resp.status_code
+            if code in (200, 201):
+                resp.success()
+            elif code in (301, 302, 303, 307, 308):
+                resp.success()
+            elif code == 429:
+                resp.failure(f"Rate limited (IP: {self.source_ip})")
+            elif code == 403:
+                resp.failure(f"IP blocked: {self.source_ip}")
+            elif code == 401:
+                resp.failure("Unauthorized")
+            elif code == 503:
+                resp.failure("Service unavailable")
+            elif code == 500:
+                resp.failure("Server error 500")
+            elif code == 0:
+                resp.failure("Connection error")
+            else:
+                resp.failure(f"Unexpected: {code}")
 

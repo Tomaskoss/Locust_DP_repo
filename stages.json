@@ -1,1 +1,1 @@
-[{"duration": 15, "users": 2, "spawn_rate": 2, "wait_mode": "between", "wait_min": 1.0, "wait_max": 3.0}]
+[{"duration": 15, "users": 10, "spawn_rate": 10, "wait_mode": "constant", "wait_min": 0.01, "wait_max": 3.0}]
