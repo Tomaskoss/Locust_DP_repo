@@ -794,8 +794,7 @@ class LocustGUI(ctk.CTk):
             self._preset_btns[name] = btn
 
         self._stages_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
-        self._stages_frame.grid(row=1, column=0, padx=12, pady=(4, 0), sticky="ew")
-
+        self._stages_frame.grid(row=1, column=0, padx=12, pady=(2, 0), sticky="ew")
         self._stages_frame.grid_columnconfigure(0, minsize=180, weight=1)
         self._stages_frame.grid_columnconfigure(1, minsize=180, weight=1)
         self._stages_frame.grid_columnconfigure(2, minsize=180, weight=1)
@@ -803,6 +802,8 @@ class LocustGUI(ctk.CTk):
         self._stages_frame.grid_columnconfigure(4, minsize=55,  weight=0)
         self._stages_frame.grid_columnconfigure(5, minsize=55,  weight=0)
         self._stages_frame.grid_columnconfigure(6, minsize=30,  weight=0)
+        self._hdr_min_lbl = None
+        self._hdr_max_lbl = None
         for col, (txt, help_txt) in enumerate([
             ("Duration (s)", None),
             ("Users",        None),
@@ -821,10 +822,10 @@ class LocustGUI(ctk.CTk):
             lbl.grid(row=0, column=col, padx=(0,4), pady=4, sticky="w")
             if help_txt:
                 CTkToolTip(lbl, message=help_txt, delay=0.3, x_offset=10, y_offset=-10)
-
-        self._stages_frame = ctk.CTkFrame(card_stages, fg_color="transparent")
-        self._stages_frame.grid(row=2, column=0, padx=12, pady=(2, 0), sticky="ew")
-        self._stages_frame.grid_columnconfigure((0, 1, 2), weight=1)
+            if txt == "Min":
+                self._hdr_min_lbl = lbl
+            elif txt == "Max":
+                self._hdr_max_lbl = lbl
 
         ctk.CTkButton(
             card_stages, text="+ Add stage", height=28,
@@ -971,12 +972,30 @@ class LocustGUI(ctk.CTk):
             e_max.grid(row=i+1, column=5, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_max"] = e_max
 
-            # Skry Max ak mode nie je "between"
-            def _on_wait_mode_change(mode, entry=e_max):
+            # Skry Max a roztiahni Min ak mode nie je "between"; aktualizuj aj header labely
+            def _on_wait_mode_change(mode, _row=i+1, _emin=e_min, _emax=e_max):
                 if mode == "between":
-                    entry.grid()
+                    _emin.grid(row=_row, column=4, columnspan=1,
+                               padx=(0, 4), pady=3, sticky="ew")
+                    _emax.grid(row=_row, column=5,
+                               padx=(0, 4), pady=3, sticky="ew")
+                    if self._hdr_min_lbl:
+                        self._hdr_min_lbl.grid(row=0, column=4, columnspan=1,
+                                               padx=(0, 4), pady=4, sticky="w")
+                        self._hdr_min_lbl.configure(text="MIN ⓘ")
+                    if self._hdr_max_lbl:
+                        self._hdr_max_lbl.grid(row=0, column=5,
+                                               padx=(0, 4), pady=4, sticky="w")
                 else:
-                    entry.grid_remove()
+                    _emax.grid_remove()
+                    _emin.grid(row=_row, column=4, columnspan=2,
+                               padx=(0, 4), pady=3, sticky="ew")
+                    if self._hdr_min_lbl:
+                        self._hdr_min_lbl.grid(row=0, column=4, columnspan=2,
+                                               padx=(0, 4), pady=4, sticky="w")
+                        self._hdr_min_lbl.configure(text="MIN ⓘ")
+                    if self._hdr_max_lbl:
+                        self._hdr_max_lbl.grid_remove()
 
             _on_wait_mode_change(stage.get("wait_mode", "between"))
             cb.configure(command=_on_wait_mode_change)
@@ -1939,4 +1958,3 @@ class LocustGUI(ctk.CTk):
 if __name__ == "__main__":
     app = LocustGUI()
     app.mainloop()
-

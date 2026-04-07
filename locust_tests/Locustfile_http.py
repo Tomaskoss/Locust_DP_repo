@@ -42,12 +42,10 @@ def _source_bound_create_connection(address, timeout=None,
     if not infos:
         raise socket.gaierror(f"getaddrinfo: no results for {host}:{port} (af={af})")
 
-  
     last_err = None
     for af, socktype, proto, _, sockaddr in infos:
         sock = socket.socket(af, socktype, proto)
 
-     
         if socket_options:
             for opt in socket_options:
                 sock.setsockopt(*opt)
@@ -65,7 +63,7 @@ def _source_bound_create_connection(address, timeout=None,
                 sock.bind((src_ip, src_port))
             sock.settimeout(timeout)
             sock.connect(sockaddr)
-            _local.last_used_port = sock.getsockname()[1] 
+            _local.last_used_port = sock.getsockname()[1]
 
             return sock
         except Exception as e:
@@ -176,7 +174,6 @@ def on_test_start(environment, **kwargs):
 
     start_time  = datetime.now()
     target_host = environment.host or "Unknown"
-    
 
     #  Skús načítať z test_config.csv (vytvorí GUI)
     target_ip = None
@@ -237,7 +234,7 @@ def on_test_stop(environment, **kwargs):
     global start_time, target_host, target_ip
     if isinstance(environment.runner, WorkerRunner):
         return
-        
+
     end_time = datetime.now()
     duration = end_time - start_time if start_time else "Unknown"
 
@@ -269,20 +266,13 @@ def on_test_stop(environment, **kwargs):
 
 
 # ============================================================
-#  WAIT TIME BUILDER
+#  DYNAMIC WAIT CONFIG  (aktualizuje DynamicShape.tick())
 # ============================================================
 
-def build_wait_time():
-    mode  = os.getenv("WAIT_MODE", "between")
-    w_min = float(os.getenv("WAIT_MIN", "1"))
-    w_max = float(os.getenv("WAIT_MAX", "3"))
+_current_wait_cfg  = {"mode": "between", "min": 1.0, "max": 3.0}
+_wait_cfg_lock     = threading.Lock()
 
-    if mode == "constant":
-        return constant(w_min)
-    elif mode == "constant_throughput":
-        return constant_throughput(w_min)
-    else:  # between (default)
-        return between(w_min, w_max)
+
 # ============================================================
 #  SOURCE IP ADAPTER
 # ============================================================
@@ -308,6 +298,7 @@ class SourceIPAdapter(HTTPAdapter):
                 del _local.source_params
             except AttributeError:
                 pass
+
 # ============================================================
 #  DYNAMIC SHAPE
 # ============================================================
@@ -326,12 +317,17 @@ class DynamicShape(LoadTestShape):
                 self._load()
             except Exception:
                 return None
+
         t = self.get_run_time()
         for stage in self._stages:
             if t < stage["duration"]:
+                # Aktualizuj globálny wait config podľa aktuálneho stagu
+                with _wait_cfg_lock:
+                    _current_wait_cfg["mode"] = stage.get("waitmode", "between")
+                    _current_wait_cfg["min"]  = float(stage.get("waitmin", 1.0))
+                    _current_wait_cfg["max"]  = float(stage.get("waitmax", 3.0))
                 return stage["users"], stage["spawn_rate"]
         return None
-
 
 # ============================================================
 #  USER CLASS
@@ -341,7 +337,19 @@ class MyUser(HttpUser):
     _ip_pool   = None
     _port_pool = None
     _pool_lock = threading.Lock()
-    wait_time = build_wait_time()
+
+    def wait_time(self):
+        with _wait_cfg_lock:
+            mode = _current_wait_cfg["mode"]
+            wmin = _current_wait_cfg["min"]
+            wmax = _current_wait_cfg["max"]
+
+        if mode == "constant":
+            return wmin
+        elif mode == "constant_throughput":
+            return (1.0 / wmin) if wmin > 0 else 1.0
+        else:  # between (default)
+            return random.uniform(wmin, wmax)
 
     @classmethod
     def get_ip_pool(cls):
@@ -369,7 +377,7 @@ class MyUser(HttpUser):
         self.adapter = SourceIPAdapter(self.source_ip, self.source_port)
         self.client.mount("http://",  self.adapter)
         self.client.mount("https://", self.adapter)
-        
+
         ssl_verify = os.getenv("SSL_VERIFY", "true").lower() != "false"
         self.client.verify = ssl_verify
         if not ssl_verify:
