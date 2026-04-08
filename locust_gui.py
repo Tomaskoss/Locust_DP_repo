@@ -14,6 +14,7 @@ import pandas as pd
 import csv
 import glob
 import json
+from collections import defaultdict
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 from CTkToolTip import CTkToolTip
@@ -128,13 +129,13 @@ STAGE_PRESETS = {
                   {"duration": 120, "users": 50,  "spawn_rate": 10},
                   {"duration": 180, "users": 100, "spawn_rate": 20},
                   {"duration": 300, "users": 300, "spawn_rate": 50},
-                  {"duration": 360, "users": 0,   "spawn_rate": 10}],
+                  {"duration": 360, "users": 1,   "spawn_rate": 10}],
     "Spike":     [{"duration": 30,  "users": 10,  "spawn_rate": 2},
                   {"duration": 60,  "users": 500, "spawn_rate": 200},
                   {"duration": 90,  "users": 10,  "spawn_rate": 50}],
     "Endurance": [{"duration": 300,  "users": 10, "spawn_rate": 2},
                   {"duration": 7200, "users": 25, "spawn_rate": 1},
-                  {"duration": 7500, "users": 0,  "spawn_rate": 5}],
+                  {"duration": 7500, "users": 1,  "spawn_rate": 5}],
     "Capacity":  [{"duration": 120, "users": 10,  "spawn_rate": 2},
                   {"duration": 240, "users": 25,  "spawn_rate": 2},
                   {"duration": 360, "users": 50,  "spawn_rate": 5},
@@ -263,7 +264,6 @@ def parse_pool_lines(path):
             if not line:
                 continue
             if line.startswith("#"):
-                # zachytí starý komentár:  # prefix=/32
                 if "prefix=/" in line:
                     try:
                         header_prefix = line.split("prefix=/")[1].strip()
@@ -279,11 +279,6 @@ def parse_pool_lines(path):
 
 
 def pool_lines_to_cidr(path):
-    """
-    Vráti zoznam reťazcov 'IP/prefix' — hotové na zápis alebo priame
-    odovzdanie do ip addr add.
-    Ak záznam nemá prefix, vynechá ho (vráti samotnú IP).
-    """
     result = []
     for ip, prefix in parse_pool_lines(path):
         result.append(f"{ip}/{prefix}" if prefix else ip)
@@ -291,10 +286,6 @@ def pool_lines_to_cidr(path):
 
 
 def read_pool_for_interface(path, default_prefix=None):
-    """
-    Vráti list dvojíc (ip, prefix) pripravených na pridanie/odobranie z interface.
-    Ak prefix chýba, použije default_prefix (reťazec, napr. '32').
-    """
     out = []
     for ip, prefix in parse_pool_lines(path):
         p = prefix or default_prefix
@@ -306,13 +297,13 @@ def read_pool_for_interface(path, default_prefix=None):
 # ============================================================
 
 class SavePoolDialog(ctk.CTkToplevel):
-    """Modal dialog – pomenuj pool a vyber, či ho uložíš ako nový alebo mergneš s existujúcim."""
+  
 
     def __init__(self, master, ip_pool_dir, suggested_name, **kwargs):
         super().__init__(master, **kwargs)
-        self.result_name   = None   # finálny názov (bez .txt)
-        self.result_mode   = None   # "new" alebo "append"
-        self.result_target = None   # cesta k existujúcemu súboru pri append
+        self.result_name   = None   
+        self.result_mode   = None   
+        self.result_target = None  
 
         self.title("Save IP Pool")
         self.geometry("500x290")
@@ -466,7 +457,6 @@ class LocustGUI(ctk.CTk):
         self._pages          = {}
         self._zoom           = 1.0
 
-        # stages — inicializácia pred _build_main
         self._stages      = []
         self._stage_rows  = []
         self._preset_btns = {}
@@ -539,7 +529,7 @@ class LocustGUI(ctk.CTk):
         if os.getenv("IP_VERSION", "ipv4") == "ipv6":
             self.ip_tab.set("IPv6")
 
-        # ── Stages — musí byť posledné ────────────────────────────
+        # ── Stages —────────────────────────────
         stages_raw = os.getenv("STAGES", "")
         if stages_raw:
             try:
@@ -971,7 +961,7 @@ class LocustGUI(ctk.CTk):
             help="Interface to monitor for network traffic statistics\n(bytes sent/received, packets) during the test.\nResults are saved to network_usage.csv and shown in the report."
         )
 
-        # ── Actions — fixed bottom ────────────────────────────────
+        # ── Actions ────────────────────────────────
         bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
         bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
         bf.grid_propagate(False)
@@ -1112,7 +1102,7 @@ class LocustGUI(ctk.CTk):
                       command=self._clear_locustfile
                       ).grid(row=0, column=3, padx=(0, 16), pady=10)
 
-        # ── Actions — fixed bottom ────────────────────────────────
+        # ── Actions  ────────────────────────────────
         bf = ctk.CTkFrame(outer, fg_color=C_CONTENT, height=48)
         bf.grid(row=1, column=0, sticky="ew", padx=0, pady=0)
         bf.grid_propagate(False)
@@ -1148,6 +1138,7 @@ class LocustGUI(ctk.CTk):
         self._render_stage_rows()
 
     def _add_stage_row(self):
+        self._stages = self._get_stages()
         last = self._stages[-1] if self._stages else {"duration": 0, "users": 0, "spawn_rate": 2}
         self._stages.append({
             "duration":   last["duration"] + 60,
@@ -1160,6 +1151,7 @@ class LocustGUI(ctk.CTk):
 
     def _del_stage_row(self, idx):
         if len(self._stages) > 1:
+            self._stages = self._get_stages()
             self._stages.pop(idx)
             self._render_stage_rows()
 
@@ -1871,7 +1863,6 @@ class LocustGUI(ctk.CTk):
         src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
 
-        # Načítaj pool štatistiky z ip_pool.txt (nový formát IP/prefix)
         pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
         pool_count = 0
         pool_ips   = ""
@@ -1984,7 +1975,6 @@ class LocustGUI(ctk.CTk):
             custom_file = self._custom_pool_entry.get().strip()
             pool_path   = os.path.join(BASE_DIR, "ip_pool.txt")
 
-            # ── Načítaj existujúce záznamy z ip_pool.txt (pred prepísaním) ──
             existing_entries = []
             if os.path.exists(pool_path):
                 existing_entries = parse_pool_lines(pool_path)
@@ -1992,8 +1982,7 @@ class LocustGUI(ctk.CTk):
                     self.write_log(
                         f"📋 Existing ip_pool.txt: {len(existing_entries)} IPs (will be preserved)"
                     )
-
-            # ── Vytvor dočasný súbor pre nové IP ──────────────────────────
+                    
             tmp_pool = pool_path + ".new"
 
             if custom_file:
@@ -2031,11 +2020,9 @@ class LocustGUI(ctk.CTk):
                 )
                 self.write_log(f"✓ New IPs generated [{ip_ver.upper()}]")
 
-            # ── Normalizuj nové záznamy do formátu IP/prefix ──────────────
             self._rewrite_pool_with_prefix(tmp_pool, prefix_len)
             new_entries = parse_pool_lines(tmp_pool) if os.path.exists(tmp_pool) else []
 
-            # ── Merge: existujúce + nové, deduplikácia podľa IP ───────────
             seen_ips = {ip for ip, _ in existing_entries}
             added    = 0
             merged   = list(existing_entries)
@@ -2049,8 +2036,6 @@ class LocustGUI(ctk.CTk):
                 for ip, prefix in merged:
                     p = prefix if prefix else prefix_len
                     f.write(f"{ip}/{p}\n")
-
-            # Uprac dočasný súbor
             try:
                 os.remove(tmp_pool)
             except OSError:
@@ -2301,17 +2286,14 @@ class LocustGUI(ctk.CTk):
 
         if dlg.result_mode == "append" and dlg.result_target and os.path.exists(dlg.result_target):
             # ── Merge ─────────────────────────────────────────────
-            # Načítaj oba súbory cez jednotný parser
-            existing = parse_pool_lines(dlg.result_target)   # [(ip, prefix), ...]
-            new_ips  = parse_pool_lines(pool_src)             # [(ip, prefix), ...]
+            existing = parse_pool_lines(dlg.result_target)   
+            new_ips  = parse_pool_lines(pool_src)          
 
-            # Deduplikuj podľa samotnej IP adresy (ignoruj prefix pri porovnaní)
             seen_ips = {ip for ip, _ in existing}
             added    = 0
             merged   = list(existing)
             for ip, prefix in new_ips:
                 if ip not in seen_ips:
-                    # Doplň prefix ak chýba
                     merged.append((ip, prefix if prefix else prefix_len))
                     seen_ips.add(ip)
                     added += 1
@@ -2325,8 +2307,6 @@ class LocustGUI(ctk.CTk):
                 f"🔀 Merge: {len(existing)} existing + {added} new = {len(merged)} total IPs"
             )
         else:
-            # ── Jednoduchá kópia — ip_pool.txt už je v IP/prefix formáte ──
-            # Overíme a prípadne doplníme prefix pre staré záznamy bez neho
             entries = parse_pool_lines(pool_src)
             needs_rewrite = any(p is None for _, p in entries)
 
@@ -2336,7 +2316,7 @@ class LocustGUI(ctk.CTk):
                         p = prefix if prefix else prefix_len
                         f.write(f"{ip}/{p}\n")
             else:
-                shutil.copy2(pool_src, dest)   # priama kópia, zachová mtime
+                shutil.copy2(pool_src, dest) 
 
         fname      = os.path.basename(dest)
         pool_count = len(parse_pool_lines(dest))
@@ -2363,17 +2343,12 @@ class LocustGUI(ctk.CTk):
             if os.path.exists(pool_file):
                 entries = parse_pool_lines(pool_file)
             else:
-                # Fallback: použi GUI hodnoty (len aktívna verzia)
                 entries = [(ip, None) for ip in self._get_ip_list()]
 
             if not entries:
                 self.write_log("⚠ ip_pool.txt is empty — nothing to remove")
                 return
-
-            # ── Zoskup záznamy podľa (ip_version, prefix) ─────────────────
-            # Každá unikátna kombinácia verzie a prefixu dostane vlastné volanie
-            # remove_pool — takto sa zmažú aj IPv4/28 aj IPv4/30 aj IPv6/64 atď.
-            from collections import defaultdict
+                
             groups = defaultdict(list)
             for ip, p in entries:
                 ver    = "ipv6" if is_ipv6(ip) else "ipv4"
