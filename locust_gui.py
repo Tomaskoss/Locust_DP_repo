@@ -124,24 +124,28 @@ THEMES = {
 }
 
 STAGE_PRESETS = {
-    "Flat":      [{"duration": 300, "users": 50,  "spawn_rate": 5}],
-    "Stress":    [{"duration": 60,  "users": 10,  "spawn_rate": 5},
-                  {"duration": 120, "users": 50,  "spawn_rate": 10},
-                  {"duration": 180, "users": 100, "spawn_rate": 20},
-                  {"duration": 300, "users": 300, "spawn_rate": 50},
-                  {"duration": 360, "users": 1,   "spawn_rate": 10}],
-    "Spike":     [{"duration": 30,  "users": 10,  "spawn_rate": 2},
-                  {"duration": 60,  "users": 500, "spawn_rate": 200},
-                  {"duration": 90,  "users": 10,  "spawn_rate": 50}],
-    "Endurance": [{"duration": 300,  "users": 10, "spawn_rate": 2},
-                  {"duration": 7200, "users": 25, "spawn_rate": 1},
-                  {"duration": 7500, "users": 1,  "spawn_rate": 5}],
-    "Capacity":  [{"duration": 120, "users": 10,  "spawn_rate": 2},
-                  {"duration": 240, "users": 25,  "spawn_rate": 2},
-                  {"duration": 360, "users": 50,  "spawn_rate": 5},
-                  {"duration": 480, "users": 100, "spawn_rate": 10},
-                  {"duration": 600, "users": 150, "spawn_rate": 10},
-                  {"duration": 720, "users": 200, "spawn_rate": 20}],
+    "Flat":      [{"duration": 300, "users": 50, "spawn_rate": 5, "wait_mode": "between", "wait_min": "1", "wait_max": "3"}],
+    
+    "Stress":    [{"duration": 60, "users": 10, "spawn_rate": 5, "wait_mode": "constant", "wait_min": "1", "wait_max": "3"},
+                  {"duration": 120, "users": 50, "spawn_rate": 10, "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+                  {"duration": 180, "users": 100, "spawn_rate": 20, "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+                  {"duration": 300, "users": 300, "spawn_rate": 50, "wait_mode": "constant", "wait_min": "0.1", "wait_max": "1"},
+                  {"duration": 360, "users": 1, "spawn_rate": 10, "wait_mode": "constant", "wait_min": "1", "wait_max": "3"}],
+                  
+    "Spike":     [{"duration": 30, "users": 10, "spawn_rate": 2, "wait_mode": "constant", "wait_min": "1", "wait_max": "1"},
+                  {"duration": 60, "users": 500, "spawn_rate": 200, "wait_mode": "constant", "wait_min": "0.1", "wait_max": "0.1"},
+                  {"duration": 90, "users": 10, "spawn_rate": 50, "wait_mode": "constant", "wait_min": "1", "wait_max": "1"}],
+                  
+    "Endurance": [{"duration": 300, "users": 10, "spawn_rate": 2, "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+                  {"duration": 7200, "users": 25, "spawn_rate": 1, "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+                  {"duration": 7500, "users": 1, "spawn_rate": 5, "wait_mode": "between", "wait_min": "2", "wait_max": "5"}],
+                  
+    "Capacity":  [{"duration": 120, "users": 10, "spawn_rate": 2, "wait_mode": "constant_throughput", "wait_min": "1", "wait_max": "1"},
+                  {"duration": 240, "users": 25, "spawn_rate": 2, "wait_mode": "constant_throughput", "wait_min": "2", "wait_max": "2"},
+                  {"duration": 360, "users": 50, "spawn_rate": 5, "wait_mode": "constant_throughput", "wait_min": "3", "wait_max": "3"},
+                  {"duration": 480, "users": 100, "spawn_rate": 10, "wait_mode": "constant_throughput", "wait_min": "5", "wait_max": "5"},
+                  {"duration": 600, "users": 150, "spawn_rate": 10, "wait_mode": "constant_throughput", "wait_min": "7", "wait_max": "7"},
+                  {"duration": 720, "users": 200, "spawn_rate": 20, "wait_mode": "constant_throughput", "wait_min": "10", "wait_max": "10"}],
 }
 
 
@@ -1636,15 +1640,7 @@ class LocustGUI(ctk.CTk):
                           ).grid(row=0, column=1)
 
     def _open_report(self, path):
-        try:
-            if sys.platform.startswith("linux"):
-                subprocess.Popen(["xdg-open", path])
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", path])
-            else:
-                os.startfile(path)
-        except Exception as e:
-            self.write_log(f"✗ Cannot open report: {e}")
+        self._open_file(path)
 
     def _delete_report(self, path, name):
         try:
@@ -1784,6 +1780,21 @@ class LocustGUI(ctk.CTk):
     # ================================================================
     # GENERIC HELPERS
     # ================================================================
+
+    # ================================================================
+    # OPEN FILE  (platform helper – used by report generator & report list)
+    # ================================================================
+
+    def _open_file(self, path):
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", path])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                os.startfile(path)
+        except Exception as e:
+            self.write_log(f"✗ Cannot open file: {e}")
 
     def write_log(self, msg):
         self.log_queue.put(msg)
@@ -2023,19 +2034,9 @@ class LocustGUI(ctk.CTk):
             self._rewrite_pool_with_prefix(tmp_pool, prefix_len)
             new_entries = parse_pool_lines(tmp_pool) if os.path.exists(tmp_pool) else []
 
-            seen_ips = {ip for ip, _ in existing_entries}
-            added    = 0
-            merged   = list(existing_entries)
-            for ip, prefix in new_entries:
-                if ip not in seen_ips:
-                    merged.append((ip, prefix if prefix else prefix_len))
-                    seen_ips.add(ip)
-                    added += 1
+            merged, added = self._merge_pool_entries(existing_entries, new_entries, prefix_len)
 
-            with open(pool_path, "w") as f:
-                for ip, prefix in merged:
-                    p = prefix if prefix else prefix_len
-                    f.write(f"{ip}/{p}\n")
+            self._write_pool_file(pool_path, merged, prefix_len)
             try:
                 os.remove(tmp_pool)
             except OSError:
@@ -2050,6 +2051,28 @@ class LocustGUI(ctk.CTk):
         except Exception as e:
             self.write_log(f"✗ Setup error: {e}")
 
+    def _merge_pool_entries(self, existing, new_entries, default_prefix):
+        """
+        Zlúči zoznam nových IP zápisov do existujúcich, pričom vynechá duplicity.
+        Vracia (merged list, počet pridaných).
+        """
+        seen_ips = {ip for ip, _ in existing}
+        added    = 0
+        merged   = list(existing)
+        for ip, prefix in new_entries:
+            if ip not in seen_ips:
+                merged.append((ip, prefix if prefix else default_prefix))
+                seen_ips.add(ip)
+                added += 1
+        return merged, added
+
+    def _write_pool_file(self, path, entries, default_prefix):
+        """Zapíše zoznam (ip, prefix) zápisov do súboru vo formáte IP/prefix."""
+        with open(path, "w") as f:
+            for ip, prefix in entries:
+                p = prefix if prefix else default_prefix
+                f.write(f"{ip}/{p}\n")
+
     def _rewrite_pool_with_prefix(self, pool_path, default_prefix):
         """
         Prečíta ip_pool.txt a prepíše ho tak, aby každý riadok
@@ -2058,10 +2081,7 @@ class LocustGUI(ctk.CTk):
         if not os.path.exists(pool_path):
             return
         entries = parse_pool_lines(pool_path)
-        with open(pool_path, "w") as f:
-            for ip, prefix in entries:
-                p = prefix if prefix else default_prefix
-                f.write(f"{ip}/{p}\n")
+        self._write_pool_file(pool_path, entries, default_prefix)
         self.write_log(
             f"✓ ip_pool.txt rewritten to IP/prefix format "
             f"({len(entries)} entries, default /{default_prefix})"
@@ -2252,12 +2272,7 @@ class LocustGUI(ctk.CTk):
             )
             self.write_log(f"✓ {report_name} generated → {save_dir}")
             self.write_log("=" * 60)
-            if sys.platform.startswith("linux"):
-                subprocess.Popen(["xdg-open", pdf_path])
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", pdf_path])
-            else:
-                os.startfile(pdf_path)
+            self._open_file(pdf_path)
         except Exception as e:
             self.write_log(f"✗ Report error: {e}")
 
@@ -2286,23 +2301,12 @@ class LocustGUI(ctk.CTk):
 
         if dlg.result_mode == "append" and dlg.result_target and os.path.exists(dlg.result_target):
             # ── Merge ─────────────────────────────────────────────
-            existing = parse_pool_lines(dlg.result_target)   
-            new_ips  = parse_pool_lines(pool_src)          
+            existing = parse_pool_lines(dlg.result_target)
+            new_ips  = parse_pool_lines(pool_src)
 
-            seen_ips = {ip for ip, _ in existing}
-            added    = 0
-            merged   = list(existing)
-            for ip, prefix in new_ips:
-                if ip not in seen_ips:
-                    merged.append((ip, prefix if prefix else prefix_len))
-                    seen_ips.add(ip)
-                    added += 1
+            merged, added = self._merge_pool_entries(existing, new_ips, prefix_len)
 
-            with open(dest, "w") as f:
-                for ip, prefix in merged:
-                    p = prefix if prefix else prefix_len
-                    f.write(f"{ip}/{p}\n")
-
+            self._write_pool_file(dest, merged, prefix_len)
             self.write_log(
                 f"🔀 Merge: {len(existing)} existing + {added} new = {len(merged)} total IPs"
             )
@@ -2311,12 +2315,9 @@ class LocustGUI(ctk.CTk):
             needs_rewrite = any(p is None for _, p in entries)
 
             if needs_rewrite:
-                with open(dest, "w") as f:
-                    for ip, prefix in entries:
-                        p = prefix if prefix else prefix_len
-                        f.write(f"{ip}/{p}\n")
+                self._write_pool_file(dest, entries, prefix_len)
             else:
-                shutil.copy2(pool_src, dest) 
+                shutil.copy2(pool_src, dest)
 
         fname      = os.path.basename(dest)
         pool_count = len(parse_pool_lines(dest))
