@@ -9,6 +9,7 @@ import os
 import time
 import queue
 import socket
+import shutil
 import pandas as pd
 import csv
 import glob
@@ -24,6 +25,7 @@ ctk.set_default_color_theme("blue")
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(BASE_DIR, "network"))
 sys.path.insert(0, os.path.join(BASE_DIR, "report"))
+IP_POOL_DIR   = os.path.join(BASE_DIR, "IP_pool")
 
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, "config.env"), override=True)
 
@@ -71,53 +73,53 @@ THEMES = {
         "BTN_SETUP":    "#23395B",
     },
     "Discord Light": {
-        "BG_SIDEBAR":   "#282b30",   # tmavý panel
-        "BG_MAIN":      "#36393e",   # hlavný obsah
-        "BG_CARD":      "#424549",   # karty/sekcie
-        "ACCENT":       "#7289da",   # blurple
-        "ACCENT_HOVER": "#5b73c7",   # tmavší blurple
-        "FG_TEXT":      "#dcddde",   # hlavný text (Discord štandard)
-        "FG_MUTED":     "#72767d",   # tlmený text
-        "FG_LABEL":     "#b9bbbe",   # labely polí
-        "FG_HEADER":    "#7289da",   # nadpisy sekcií
-        "BG_INPUT":     "#1e2124",   # najtmavšie — inputy
-        "BTN_DANGER":   "#ed4245",   # Discord červená
-        "BTN_START":    "#7289da",   # Discord blurple
-        "BTN_REPORT":   "#7289da",   # blurple
-        "BTN_SETUP":    "#7289da",   # blurple
+        "BG_SIDEBAR":   "#282b30",
+        "BG_MAIN":      "#36393e",
+        "BG_CARD":      "#424549",
+        "ACCENT":       "#7289da",
+        "ACCENT_HOVER": "#5b73c7",
+        "FG_TEXT":      "#dcddde",
+        "FG_MUTED":     "#72767d",
+        "FG_LABEL":     "#b9bbbe",
+        "FG_HEADER":    "#7289da",
+        "BG_INPUT":     "#1e2124",
+        "BTN_DANGER":   "#ed4245",
+        "BTN_START":    "#7289da",
+        "BTN_REPORT":   "#7289da",
+        "BTN_SETUP":    "#7289da",
     },
     "Discord Darkest": {
-        "BG_SIDEBAR":   "#121214",   # takmer čierna
-        "BG_MAIN":      "#1a1a1e",   
-        "BG_CARD":      "#242428",   
-        "ACCENT":       "#5b73c7",   # blurple
+        "BG_SIDEBAR":   "#121214",
+        "BG_MAIN":      "#1a1a1e",
+        "BG_CARD":      "#242428",
+        "ACCENT":       "#5b73c7",
         "ACCENT_HOVER": "#7289da",
         "FG_TEXT":      "#dcddde",
         "FG_MUTED":     "#72767d",
         "FG_LABEL":     "#b9bbbe",
         "FG_HEADER":    "#7289da",
-        "BG_INPUT":     "#0d0e10",   # absolútne najtemnejšia
+        "BG_INPUT":     "#0d0e10",
         "BTN_DANGER":   "#ed4245",
         "BTN_START":    "#5b73c7",
         "BTN_REPORT":   "#5b73c7",
         "BTN_SETUP":    "#5b73c7",
     },
     "Netflix": {
-    "BG_SIDEBAR":   "#141414",   # Netflix čierna
-    "BG_MAIN":      "#181818",   # hlavné pozadie
-    "BG_CARD":      "#222222",   # karty
-    "ACCENT":       "#800000",   # Netflix červená
-    "ACCENT_HOVER": "#b20710",   # tmavšia červená
-    "FG_TEXT":      "#ffffff",   # biely text
-    "FG_MUTED":     "#808080",   # šedý text
-    "FG_LABEL":     "#b3b3b3",   # labely
-    "FG_HEADER":    "#ffffff",   # nadpisy červené
-    "BG_INPUT":     "#0d0d0d",   # najtmavší input
-    "BTN_DANGER":   "#A40031",   # červená = danger
-    "BTN_START":    "#015041",   # Netflix zelená (playing indicator)
-    "BTN_REPORT":   "#015041",   # červená
-    "BTN_SETUP":    "#015041",   # červená
-},
+        "BG_SIDEBAR":   "#141414",
+        "BG_MAIN":      "#181818",
+        "BG_CARD":      "#222222",
+        "ACCENT":       "#800000",
+        "ACCENT_HOVER": "#b20710",
+        "FG_TEXT":      "#ffffff",
+        "FG_MUTED":     "#808080",
+        "FG_LABEL":     "#b3b3b3",
+        "FG_HEADER":    "#ffffff",
+        "BG_INPUT":     "#0d0d0d",
+        "BTN_DANGER":   "#A40031",
+        "BTN_START":    "#015041",
+        "BTN_REPORT":   "#015041",
+        "BTN_SETUP":    "#015041",
+    },
 }
 
 STAGE_PRESETS = {
@@ -240,10 +242,191 @@ def get_network_interfaces():
         pass
     return interfaces if interfaces else ["ens33", "eth0", "wlan0"]
 
+# ============================================================
+#  POOL FILE HELPERS
+# ============================================================
+
+def parse_pool_lines(path):
+    """
+    Číta pool súbor a vracia zoznam reťazcov vo formáte 'IP/prefix'.
+    Podporuje:
+      - nový formát:  '192.168.10.10/32'
+      - starý formát: '192.168.10.10'  (prefix sa doplní z hlavičkového komentára
+                                         alebo zostane None)
+    Vracia: list of (ip_str, prefix_str|None)  — napr. [('192.168.10.10', '32'), ...]
+    """
+    entries      = []
+    header_prefix = None
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                # zachytí starý komentár:  # prefix=/32
+                if "prefix=/" in line:
+                    try:
+                        header_prefix = line.split("prefix=/")[1].strip()
+                    except Exception:
+                        pass
+                continue
+            if "/" in line:
+                ip, prefix = line.split("/", 1)
+                entries.append((ip.strip(), prefix.strip()))
+            else:
+                entries.append((line, header_prefix))
+    return entries
+
+
+def pool_lines_to_cidr(path):
+    """
+    Vráti zoznam reťazcov 'IP/prefix' — hotové na zápis alebo priame
+    odovzdanie do ip addr add.
+    Ak záznam nemá prefix, vynechá ho (vráti samotnú IP).
+    """
+    result = []
+    for ip, prefix in parse_pool_lines(path):
+        result.append(f"{ip}/{prefix}" if prefix else ip)
+    return result
+
+
+def read_pool_for_interface(path, default_prefix=None):
+    """
+    Vráti list dvojíc (ip, prefix) pripravených na pridanie/odobranie z interface.
+    Ak prefix chýba, použije default_prefix (reťazec, napr. '32').
+    """
+    out = []
+    for ip, prefix in parse_pool_lines(path):
+        p = prefix or default_prefix
+        out.append((ip, p))
+    return out
 
 # ============================================================
-#  MAIN GUI
+#  SAVE POOL DIALOG
 # ============================================================
+
+class SavePoolDialog(ctk.CTkToplevel):
+    """Modal dialog – pomenuj pool a vyber, či ho uložíš ako nový alebo mergneš s existujúcim."""
+
+    def __init__(self, master, ip_pool_dir, suggested_name, **kwargs):
+        super().__init__(master, **kwargs)
+        self.result_name   = None   # finálny názov (bez .txt)
+        self.result_mode   = None   # "new" alebo "append"
+        self.result_target = None   # cesta k existujúcemu súboru pri append
+
+        self.title("Save IP Pool")
+        self.geometry("500x290")
+        self.resizable(False, False)
+        self.configure(fg_color=C_CARD)
+        self.transient(master)
+        self.update_idletasks()
+        self.deiconify()
+        self.grab_set()
+        self.focus_force()
+
+        self._ip_pool_dir = ip_pool_dir
+        self._existing    = self._scan_pools()
+
+        self._build(suggested_name)
+        self.wait_window()
+
+    def _scan_pools(self):
+        if not os.path.isdir(self._ip_pool_dir):
+            return []
+        return sorted(
+            [f for f in os.listdir(self._ip_pool_dir) if f.endswith(".txt")],
+            reverse=True
+        )
+
+    def _build(self, suggested_name):
+        self.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            self, text="💾  Save IP Pool",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=C_TEXT
+        ).grid(row=0, column=0, padx=20, pady=(16, 4), sticky="w")
+
+        ctk.CTkLabel(self, text="Pool name", font=ctk.CTkFont(size=12),
+                     text_color=C_LABEL
+                     ).grid(row=1, column=0, padx=20, pady=(10, 2), sticky="w")
+
+        self._name_entry = ctk.CTkEntry(self, fg_color=C_ENTRY, width=460)
+        self._name_entry.insert(0, suggested_name)
+        self._name_entry.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        # Mode
+        self._mode = ctk.StringVar(value="new")
+        mode_frame = ctk.CTkFrame(self, fg_color="transparent")
+        mode_frame.grid(row=3, column=0, padx=20, pady=(0, 6), sticky="w")
+
+        ctk.CTkRadioButton(
+            mode_frame, text="New file", variable=self._mode, value="new",
+            command=self._on_mode_change,
+            fg_color=C_ACTIVE, hover_color=C_HOVER, border_color=C_MUTED,
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left", padx=(0, 20))
+
+        ctk.CTkRadioButton(
+            mode_frame, text="Append / merge with existing",
+            variable=self._mode, value="append",
+            command=self._on_mode_change,
+            fg_color=C_ACTIVE, hover_color=C_HOVER, border_color=C_MUTED,
+            font=ctk.CTkFont(size=12),
+            state="normal" if self._existing else "disabled"
+        ).pack(side="left")
+
+        # Existing file selector (initially hidden)
+        self._existing_combo = ctk.CTkComboBox(
+            self,
+            values=self._existing if self._existing else ["(no saved pools yet)"],
+            fg_color=C_ENTRY, button_color=C_ACTIVE,
+            button_hover_color=C_HOVER, dropdown_fg_color=C_CARD,
+            dropdown_text_color=C_TEXT, width=460
+        )
+        if self._existing:
+            self._existing_combo.set(self._existing[0])
+        self._existing_combo.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
+        self._existing_combo.grid_remove()
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.grid(row=5, column=0, padx=20, pady=(6, 16), sticky="e")
+
+        ctk.CTkButton(
+            btn_frame, text="Cancel", width=90, height=32,
+            fg_color=C_ENTRY, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self.destroy
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            btn_frame, text="💾 Save", width=90, height=32,
+            fg_color=C_ACTIVE, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._confirm
+        ).pack(side="left")
+
+    def _on_mode_change(self):
+        if self._mode.get() == "append" and self._existing:
+            self._existing_combo.grid()
+        else:
+            self._existing_combo.grid_remove()
+
+    def _confirm(self):
+        name = self._name_entry.get().strip()
+        if not name:
+            return
+        if name.lower().endswith(".txt"):
+            name = name[:-4]
+        self.result_name = name
+        self.result_mode = self._mode.get()
+        self.result_target = (
+            os.path.join(self._ip_pool_dir, self._existing_combo.get())
+            if self.result_mode == "append" and self._existing
+            else None
+        )
+        self.destroy()
 
 class LocustGUI(ctk.CTk):
 
@@ -554,7 +737,7 @@ class LocustGUI(ctk.CTk):
         self.page_container.grid_rowconfigure(0, weight=1)
 
         self._pages["Config"]          = self._build_page_config(self.page_container)
-        self._pages["HTTP"]            = self._build_page_http(self.page_container)
+        self._pages["HTTP/S"]          = self._build_page_http(self.page_container)
         self._pages["Generate Report"] = self._build_page_report(self.page_container)
         self._pages["Reports"]         = self._build_page_reports(self.page_container)
         self.after(100, self._set_sash_default)
@@ -599,15 +782,19 @@ class LocustGUI(ctk.CTk):
 
         row = self._card_header(scroll, "General", row)
         card = self._card(scroll, row); row += 1
-        self._field_row(card, 0, "Target host",  "target",    "https://google.sk", help="Full URL or IP address of the server under test.\nExample: https://192.168.1.1 or http://myapp.local:8080")
+        self._field_row(card, 0, "Target host",  "target",    "https://google.sk",
+                        help="Full URL or IP address of the server under test.\nExample: https://192.168.1.1 or http://myapp.local:8080")
         ifaces = get_network_interfaces()
         self._combo_row(card, 1, "Interface", "interface", ifaces,
-                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
-        self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2, help="Label describing the test scenario.\nAppears in the generated PDF report header.")
+                os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),
+                help="Network interface used to send outgoing requests.\nMust match the interface where the IP pool will be assigned.")
+        self._field_row(card, 0, "Test type",    "test_type", "Load Test", col=2,
+                        help="Label describing the test scenario.\nAppears in the generated PDF report header.")
         self._field_row(card, 1, "Source ports", "src_ports", "",          col=2,
-                        ph="e.g. 1024-65535", help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
-                        
-                        # SSL checkbox
+                        ph="e.g. 1024-65535",
+                        help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
+
+        # SSL checkbox
         self._ssl_verify_var = ctk.BooleanVar(value=os.getenv("SSL_VERIFY", "true").lower() != "false")
         ssl_cb = ctk.CTkCheckBox(
             card,
@@ -620,8 +807,11 @@ class LocustGUI(ctk.CTk):
             border_color=C_MUTED,
         )
         ssl_cb.grid(row=2, column=0, columnspan=2, padx=(16, 8), pady=(0, 12), sticky="w")
-        CTkToolTip(ssl_cb, message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates", delay=0.3, x_offset=10, y_offset=-10)
+        CTkToolTip(ssl_cb,
+                   message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates",
+                   delay=0.3, x_offset=10, y_offset=-10)
 
+        # ── IP Pool ───────────────────────────────────────────────
         row = self._card_header(scroll, "IP Pool", row)
         card2 = self._card(scroll, row); row += 1
 
@@ -719,14 +909,57 @@ class LocustGUI(ctk.CTk):
         self.entries["ip6_prefix"] = e
         self.ipv6_prefix_frame.grid_remove()
 
+        # ── Custom IP Pool File ───────────────────────────────────
+        custom_pool_frame = ctk.CTkFrame(card2, fg_color="transparent")
+        custom_pool_frame.grid(row=1, column=0, columnspan=4, padx=12, pady=(0, 8), sticky="ew")
+        custom_pool_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            custom_pool_frame, text="Custom pool file",
+            font=ctk.CTkFont(size=12), text_color=C_LABEL,
+            anchor="w", width=self.LBL_W
+        ).grid(row=0, column=0, padx=(4, 8), pady=4, sticky="w")
+
+        self._custom_pool_entry = ctk.CTkEntry(
+            custom_pool_frame, fg_color=C_ENTRY,
+            placeholder_text="optional – load IPs directly from .txt file"
+        )
+        self._custom_pool_entry.grid(row=0, column=1, padx=(0, 8), pady=4, sticky="ew")
+        CTkToolTip(self._custom_pool_entry,
+                   message="Path to a plain-text file with one IP/prefix per line.\n"
+                           "Format: 192.168.10.10/32 (one entry per line).\n"
+                           "When set, Setup IP Pool will use this file directly\n"
+                           "instead of generating the pool from the IP range above.",
+                   delay=0.3, x_offset=10, y_offset=-10)
+
+        ctk.CTkButton(
+            custom_pool_frame, text="Browse", width=72, height=28,
+            fg_color=C_ENTRY, hover_color=C_HOVER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._browse_custom_pool
+        ).grid(row=0, column=2, padx=(0, 4), pady=4)
+
+        ctk.CTkButton(
+            custom_pool_frame, text="✖", width=32, height=28,
+            fg_color=darken(C_DANGER, 10), hover_color=C_DANGER,
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._clear_custom_pool
+        ).grid(row=0, column=3, padx=(0, 4), pady=4)
+
         # ── Reachability ──────────────────────────────────────────
         row = self._card_header(scroll, "Reachability", row)
         card3 = self._card(scroll, row); row += 1
-        self._field_row(card3, 0, "Interval (s)",         "reach_interval",  "5", help="How often (in seconds) a reachability probe is sent to the target\nduring the test. Lower = more precise, higher = less overhead.")
-        self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",   "5",help="Maximum time to wait for a response to each probe.\nProbes exceeding this limit are counted as failures.")
-        self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "", col=2, ph="= IP range start", help="Source IP used for reachability probes.\nLeave empty to use the first IP from the pool.\nUseful when you want probes from a specific address.")
-        self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2, help="Network interface used for reachability probes.\nLeave empty to use the main interface defined above.")
-        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0, help="Percentage of failed probes above which the test\nis marked as FAILED in the PDF report.\nExample: 50 means more than half of probes must succeed.")
+        self._field_row(card3, 0, "Interval (s)",         "reach_interval",  "5",
+                        help="How often (in seconds) a reachability probe is sent to the target\nduring the test. Lower = more precise, higher = less overhead.")
+        self._field_row(card3, 1, "Timeout (s)",           "reach_timeout",   "5",
+                        help="Maximum time to wait for a response to each probe.\nProbes exceeding this limit are counted as failures.")
+        self._field_row(card3, 0, "Source IP",             "reach_src_ip",    "", col=2,
+                        ph="= IP range start",
+                        help="Source IP used for reachability probes.\nLeave empty to use the first IP from the pool.\nUseful when you want probes from a specific address.")
+        self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2,
+                        help="Network interface used for reachability probes.\nLeave empty to use the main interface defined above.")
+        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0,
+                        help="Percentage of failed probes above which the test\nis marked as FAILED in the PDF report.\nExample: 50 means more than half of probes must succeed.")
 
         # ── Network Monitor ───────────────────────────────────────
         row = self._card_header(scroll, "Network Monitor", row)
@@ -734,7 +967,8 @@ class LocustGUI(ctk.CTk):
         ifaces = get_network_interfaces()
         self._combo_row(
             card_mon, 0, "Interface", "monitor_interface", ifaces,
-            os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33",),help="Interface to monitor for network traffic statistics\n(bytes sent/received, packets) during the test.\nResults are saved to network_usage.csv and shown in the report."
+            os.getenv("INTERFACE", ifaces[0] if ifaces else "ens33"),
+            help="Interface to monitor for network traffic statistics\n(bytes sent/received, packets) during the test.\nResults are saved to network_usage.csv and shown in the report."
         )
 
         # ── Actions — fixed bottom ────────────────────────────────
@@ -749,11 +983,17 @@ class LocustGUI(ctk.CTk):
             command=self.setup_env
         ).grid(row=0, column=1, padx=4, pady=8)
 
+        ctk.CTkButton(bf, text="💾 Save Pool", width=130, height=32,
+            fg_color=C_PURPLE, hover_color=darken(C_PURPLE, 25),
+            font=ctk.CTkFont(size=12), corner_radius=6,
+            command=self._save_current_pool_to_dir
+        ).grid(row=0, column=2, padx=4, pady=8)
+
         ctk.CTkButton(bf, text="🗑 Cleanup", width=150, height=32,
             fg_color=C_DANGER, hover_color=darken(C_DANGER, 25),
             font=ctk.CTkFont(size=12), corner_radius=6,
             command=self.cleanup
-        ).grid(row=0, column=2, padx=(4, 16), pady=8)
+        ).grid(row=0, column=3, padx=(4, 16), pady=8)
 
         return outer
 
@@ -773,7 +1013,7 @@ class LocustGUI(ctk.CTk):
         scroll.grid_columnconfigure(0, weight=1)
 
         s_row = 0
-        
+
         # ── Define Test ───────────────────────────────────────────
         s_row = self._card_header(scroll, "Define Test", s_row)
         card_stages = ctk.CTkFrame(scroll, fg_color=C_CARD, corner_radius=10)
@@ -840,12 +1080,14 @@ class LocustGUI(ctk.CTk):
             font=ctk.CTkFont(size=11), text_color=C_MUTED, anchor="w"
         )
         self._stages_total_lbl.grid(row=4, column=0, padx=14, pady=(0, 10), sticky="w")
-               # ── Locust Parameters ─────────────────────────────────────
+
+        # ── Locust Parameters ─────────────────────────────────────
         s_row = self._card_header(scroll, "Locust Parameters", s_row)
         card = self._card(scroll, s_row); s_row += 1
-        self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0, help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
-        self._field_row(card, 0, "Processes", "processes", "-1", col=2, help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
-
+        self._field_row(card, 0, "Stop timeout (s)", "stop_timeout", "60", col=0,
+                        help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
+        self._field_row(card, 0, "Processes", "processes", "-1", col=2,
+                        help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -930,7 +1172,6 @@ class LocustGUI(ctk.CTk):
         for i, stage in enumerate(self._stages):
             row_entries = {}
 
-            # Duration, Users, Spawn rate
             for col, key in enumerate(["duration", "users", "spawn_rate"]):
                 e = ctk.CTkEntry(
                     self._stages_frame, fg_color=C_ENTRY,
@@ -941,7 +1182,6 @@ class LocustGUI(ctk.CTk):
                 e.bind("<FocusOut>", lambda event: self._update_stage_totals())
                 row_entries[key] = e
 
-            # Wait mode combobox
             cb = ctk.CTkComboBox(
                 self._stages_frame,
                 values=["between", "constant", "constant_throughput"],
@@ -954,7 +1194,6 @@ class LocustGUI(ctk.CTk):
             cb.grid(row=i+1, column=3, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_mode"] = cb
 
-            # Min
             e_min = ctk.CTkEntry(
                 self._stages_frame, width=50, fg_color=C_ENTRY,
                 font=ctk.CTkFont(size=12, family="Courier New")
@@ -963,7 +1202,6 @@ class LocustGUI(ctk.CTk):
             e_min.grid(row=i+1, column=4, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_min"] = e_min
 
-            # Max
             e_max = ctk.CTkEntry(
                 self._stages_frame, width=50, fg_color=C_ENTRY,
                 font=ctk.CTkFont(size=12, family="Courier New")
@@ -972,7 +1210,6 @@ class LocustGUI(ctk.CTk):
             e_max.grid(row=i+1, column=5, padx=(0, 4), pady=3, sticky="ew")
             row_entries["wait_max"] = e_max
 
-            # Skry Max a roztiahni Min ak mode nie je "between"; aktualizuj aj header labely
             def _on_wait_mode_change(mode, _row=i+1, _emin=e_min, _emax=e_max):
                 if mode == "between":
                     _emin.grid(row=_row, column=4, columnspan=1,
@@ -1000,7 +1237,6 @@ class LocustGUI(ctk.CTk):
             _on_wait_mode_change(stage.get("wait_mode", "between"))
             cb.configure(command=_on_wait_mode_change)
 
-            # Delete button
             ctk.CTkButton(
                 self._stages_frame, text="✕", width=28, height=28,
                 fg_color="transparent", hover_color=C_DANGER,
@@ -1031,6 +1267,7 @@ class LocustGUI(ctk.CTk):
             except (ValueError, KeyError) as e:
                 print(f"[WARN] Stage row {i+1} skipped: {e}")
         return stages
+
     def _update_stage_totals(self):
         try:
             stages    = self._get_stages()
@@ -1147,8 +1384,6 @@ class LocustGUI(ctk.CTk):
                                       fg_color=C_ENTRY)
         self.cert_pass.grid(row=1, column=1, columnspan=2, padx=(0, 16), pady=(0, 12), sticky="ew")
 
-        # ── Buttons row ───────────────────────────────────────────
-        # separator
         ctk.CTkFrame(outer, height=1, fg_color=darken(C_CONTENT, 15)).grid(
             row=1, column=0, sticky="ew"
         )
@@ -1345,7 +1580,9 @@ class LocustGUI(ctk.CTk):
         reports = []
         if not os.path.isdir(REPORT_DIR):
             return reports
-        for fname in sorted(os.listdir(REPORT_DIR), key=lambda f: os.path.getmtime(os.path.join(REPORT_DIR, f)), reverse=True):
+        for fname in sorted(os.listdir(REPORT_DIR),
+                            key=lambda f: os.path.getmtime(os.path.join(REPORT_DIR, f)),
+                            reverse=True):
             if not fname.lower().endswith(".pdf"):
                 continue
             fpath = os.path.join(REPORT_DIR, fname)
@@ -1449,15 +1686,14 @@ class LocustGUI(ctk.CTk):
     def _field_row(self, card, row, label, key, default, col=0, ph=None, help: str = None):
         lbl = ctk.CTkLabel(
             card,
-            text=f"{label} ⓘ" ,
+            text=f"{label} ⓘ",
             font=ctk.CTkFont(size=15),
-            text_color=C_TEXT ,  # ⓘ zvýrazní celý label
+            text_color=C_TEXT,
             anchor="w",
             width=self.LBL_W,
             cursor="question_arrow" if help else "arrow",
         )
         lbl.grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
-
         if help:
             CTkToolTip(lbl, message=help, delay=0.3, x_offset=10, y_offset=-10)
 
@@ -1481,7 +1717,6 @@ class LocustGUI(ctk.CTk):
             cursor="question_arrow" if help else "arrow",
         )
         lbl.grid(row=row, column=col, padx=(16, 8), pady=10, sticky="w")
-
         if help:
             CTkToolTip(lbl, message=help, delay=0.3, x_offset=10, y_offset=-10)
 
@@ -1546,7 +1781,13 @@ class LocustGUI(ctk.CTk):
     def _get_source_range(self):
         start = self._get_ip_start()
         end   = self._get_ip_end()
-        return f"{start} - {end}"  
+        return f"{start} - {end}"
+
+    def _get_prefix_len(self):
+        """Vráti aktuálny prefix ako reťazec podľa aktívnej IP verzie."""
+        if self._active_ip_version() == "ipv6":
+            return self.entries["ipv6rangeprefix"].get()
+        return self.entries["ipv4prefix"].get()
 
     # ================================================================
     # GENERIC HELPERS
@@ -1629,15 +1870,19 @@ class LocustGUI(ctk.CTk):
 
         src_ip      = self.get("reach_src_ip")    or self._get_ip_start()
         reach_iface = self.get("reach_interface") or self.get("interface")
-        # Get Ip pool 
+
+        # Načítaj pool štatistiky z ip_pool.txt (nový formát IP/prefix)
         pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
         pool_count = 0
         pool_ips   = ""
         if os.path.exists(pool_file):
-            with open(pool_file) as f:
-                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-            pool_count = len(lines)
-            pool_ips   = f"{lines[0]} - {lines[-1]}" if lines else ""
+            entries = parse_pool_lines(pool_file)
+            pool_count = len(entries)
+            if entries:
+                first_ip = entries[0][0]
+                last_ip  = entries[-1][0]
+                prefix   = entries[0][1] or self._get_prefix_len()
+                pool_ips = f"{first_ip}/{prefix} - {last_ip}/{prefix}"
 
         with open(config_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
@@ -1679,16 +1924,18 @@ class LocustGUI(ctk.CTk):
                 target_clean    = str(cfg.get("target_clean",    self._get_target_clean()))
                 target_ip       = str(cfg.get("target_ip",       target_clean))
                 source_range    = str(cfg.get("source_range",    self._get_source_range()))
-                ip_pool_count = str(cfg.get("ip_pool_count", ""))
-                ip_pool_range = str(cfg.get("ip_pool_range", ""))
+                ip_pool_count   = str(cfg.get("ip_pool_count",   ""))
+                ip_pool_range   = str(cfg.get("ip_pool_range",   ""))
                 interface       = str(cfg.get("interface",       self.get("interface")))
-                reach_src_ip    = str(cfg.get("reach_src_ip", self.get("reach_src_ip")))
+                reach_src_ip    = str(cfg.get("reach_src_ip",    self.get("reach_src_ip")))
                 reach_threshold = float(cfg.get("reach_threshold", 50))
                 test_type_cfg   = str(cfg.get("test_type",       self.get("test_type")))
                 processes       = str(cfg.get("processes",       self.get("processes")))
                 stop_timeout    = str(cfg.get("stop_timeout",    self.get("stop_timeout") or "60"))
                 self.write_log(f"✓ Params: {target_clean} | {source_range} | threshold={reach_threshold}%")
-                return target_clean, target_ip, source_range, interface, reach_threshold, test_type_cfg, processes, stop_timeout, reach_src_ip, ip_pool_count, ip_pool_range
+                return (target_clean, target_ip, source_range, interface,
+                        reach_threshold, test_type_cfg, processes, stop_timeout,
+                        reach_src_ip, ip_pool_count, ip_pool_range)
             except Exception as e:
                 self.write_log(f"⚠ Error reading config: {e}")
         return (
@@ -1701,11 +1948,29 @@ class LocustGUI(ctk.CTk):
             self.get("processes"),
             self.get("stop_timeout") or "60",
             self.get("reach_src_ip") or self._get_ip_start(),
+            "0",
+            "",
         )
 
     # ================================================================
     # SETUP
     # ================================================================
+
+    def _browse_custom_pool(self):
+        init_dir = IP_POOL_DIR if os.path.isdir(IP_POOL_DIR) else BASE_DIR
+        path = fd.askopenfilename(
+            title="Select IP pool file",
+            initialdir=init_dir,
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if path:
+            self._custom_pool_entry.delete(0, "end")
+            self._custom_pool_entry.insert(0, path)
+            self.write_log(f"📂 Custom pool file: {path}")
+
+    def _clear_custom_pool(self):
+        self._custom_pool_entry.delete(0, "end")
+        self.write_log("✖ Custom pool file cleared — will use IP range")
 
     def setup_env(self):
         threading.Thread(target=self._setup_thread, daemon=True).start()
@@ -1714,25 +1979,108 @@ class LocustGUI(ctk.CTk):
         try:
             self.write_log("=" * 60)
             self.write_log("▶ SETUP – Adding IPs to interface...")
-            ip_ver     = self._active_ip_version()
-            prefix_len = (self.entries["ipv4prefix"].get()
-                          if ip_ver == "ipv4"
-                          else self.entries["ipv6rangeprefix"].get())
-            create_pool(
-                ip_start    = self._get_ip_start(),
-                ip_end      = self._get_ip_end(),
-                interface   = self.get("interface"),
-                output_file = os.path.join(BASE_DIR, "ip_pool.txt"),
-                ip_version  = ip_ver,
-                ip_list     = self._get_ip_list(),
-                prefix_len  = prefix_len,
-            )
-            self.write_log(f"✓ IP pool created [{ip_ver.upper()}]")
+            ip_ver      = self._active_ip_version()
+            prefix_len  = self._get_prefix_len()
+            custom_file = self._custom_pool_entry.get().strip()
+            pool_path   = os.path.join(BASE_DIR, "ip_pool.txt")
 
+            # ── Načítaj existujúce záznamy z ip_pool.txt (pred prepísaním) ──
+            existing_entries = []
+            if os.path.exists(pool_path):
+                existing_entries = parse_pool_lines(pool_path)
+                if existing_entries:
+                    self.write_log(
+                        f"📋 Existing ip_pool.txt: {len(existing_entries)} IPs (will be preserved)"
+                    )
+
+            # ── Vytvor dočasný súbor pre nové IP ──────────────────────────
+            tmp_pool = pool_path + ".new"
+
+            if custom_file:
+                if not os.path.exists(custom_file):
+                    self.write_log(f"✗ Custom pool file not found: {custom_file}")
+                    return
+                entries = parse_pool_lines(custom_file)
+                if not entries:
+                    self.write_log("✗ Custom pool file is empty")
+                    return
+                ip_list      = [ip for ip, _ in entries]
+                first_prefix = entries[0][1] if entries[0][1] else prefix_len
+                self.write_log(
+                    f"📂 Custom pool: {len(ip_list)} IPs, prefix=/{first_prefix} loaded"
+                )
+                create_pool(
+                    ip_start    = ip_list[0],
+                    ip_end      = ip_list[-1],
+                    interface   = self.get("interface"),
+                    output_file = tmp_pool,
+                    ip_version  = ip_ver,
+                    ip_list     = ip_list,
+                    prefix_len  = first_prefix,
+                )
+                self.write_log(f"✓ New IPs generated from custom file [{ip_ver.upper()}]")
+            else:
+                create_pool(
+                    ip_start    = self._get_ip_start(),
+                    ip_end      = self._get_ip_end(),
+                    interface   = self.get("interface"),
+                    output_file = tmp_pool,
+                    ip_version  = ip_ver,
+                    ip_list     = self._get_ip_list(),
+                    prefix_len  = prefix_len,
+                )
+                self.write_log(f"✓ New IPs generated [{ip_ver.upper()}]")
+
+            # ── Normalizuj nové záznamy do formátu IP/prefix ──────────────
+            self._rewrite_pool_with_prefix(tmp_pool, prefix_len)
+            new_entries = parse_pool_lines(tmp_pool) if os.path.exists(tmp_pool) else []
+
+            # ── Merge: existujúce + nové, deduplikácia podľa IP ───────────
+            seen_ips = {ip for ip, _ in existing_entries}
+            added    = 0
+            merged   = list(existing_entries)
+            for ip, prefix in new_entries:
+                if ip not in seen_ips:
+                    merged.append((ip, prefix if prefix else prefix_len))
+                    seen_ips.add(ip)
+                    added += 1
+
+            with open(pool_path, "w") as f:
+                for ip, prefix in merged:
+                    p = prefix if prefix else prefix_len
+                    f.write(f"{ip}/{p}\n")
+
+            # Uprac dočasný súbor
+            try:
+                os.remove(tmp_pool)
+            except OSError:
+                pass
+
+            self.write_log(
+                f"✓ ip_pool.txt updated: {len(existing_entries)} existing "
+                f"+ {added} new = {len(merged)} total IPs (/{prefix_len})"
+            )
             self.write_log("✓ SETUP COMPLETE")
             self.write_log("=" * 60)
         except Exception as e:
             self.write_log(f"✗ Setup error: {e}")
+
+    def _rewrite_pool_with_prefix(self, pool_path, default_prefix):
+        """
+        Prečíta ip_pool.txt a prepíše ho tak, aby každý riadok
+        bol vo formáte IP/prefix. Ak záznam prefix nemá, doplní default_prefix.
+        """
+        if not os.path.exists(pool_path):
+            return
+        entries = parse_pool_lines(pool_path)
+        with open(pool_path, "w") as f:
+            for ip, prefix in entries:
+                p = prefix if prefix else default_prefix
+                f.write(f"{ip}/{p}\n")
+        self.write_log(
+            f"✓ ip_pool.txt rewritten to IP/prefix format "
+            f"({len(entries)} entries, default /{default_prefix})"
+        )
 
     # ================================================================
     # RUN TEST
@@ -1757,8 +2105,8 @@ class LocustGUI(ctk.CTk):
                 fg_color=C_DANGER,
                 hover_color=darken(C_DANGER, 25),
                 text_color="white",
-                state="normal",          # ← normal, klikateľný
-                command=self.stop_locust # ← správny command
+                state="normal",
+                command=self.stop_locust
             )
         else:
             self.runbtn.configure(
@@ -1771,10 +2119,10 @@ class LocustGUI(ctk.CTk):
             )
             self.stopbtn.configure(
                 fg_color="#3a3a3a",
-                hover_color="#3a3a3a",   # ← hover = rovnaká, nech nevyzerá klikateľne
+                hover_color="#3a3a3a",
                 text_color="#aaaaaa",
                 state="normal",
-                command=lambda: None     # ← prázdny command keď test nebežím
+                command=lambda: None
             )
 
     def _run_test_thread(self):
@@ -1810,13 +2158,16 @@ class LocustGUI(ctk.CTk):
 
             self.write_log("▶ Starting Locust test...")
             self.write_log("-" * 60)
-            cmd = ["locust", "-f",self.locustfile_path or os.path.join(BASE_DIR, "locust_tests", 
-                "Locustfile_http.py"),
+            cmd = [
+                "locust", "-f",
+                self.locustfile_path or os.path.join(
+                    BASE_DIR, "locust_tests", "Locustfile_http.py"
+                ),
                 "--headless",
-                "-H",          self.get("target"),
+                "-H",             self.get("target"),
                 "--stop-timeout", self.get("stop_timeout") or "60",
-                "--processes", self.get("processes"),
-                "--csv",       os.path.join(DATA_DIR, "report"),
+                "--processes",    self.get("processes"),
+                "--csv",          os.path.join(DATA_DIR, "report"),
             ]
             self.write_log(f"CMD: {' '.join(cmd)}")
             self.write_log("-" * 60)
@@ -1903,8 +2254,8 @@ class LocustGUI(ctk.CTk):
                 comment         = self.get_comment(),
                 target_ip       = target_ip,
                 source_ip       = source_range,
-                ip_pool_count = ip_pool_count,
-                ip_pool_range = ip_pool_range,
+                ip_pool_count   = ip_pool_count,
+                ip_pool_range   = ip_pool_range,
                 interface       = interface,
                 reach_threshold = reach_threshold / 100,
                 test_type       = test_type_cfg,
@@ -1926,6 +2277,75 @@ class LocustGUI(ctk.CTk):
             self.write_log(f"✗ Report error: {e}")
 
     # ================================================================
+    # SAVE POOL  (nový formát IP/prefix)
+    # ================================================================
+
+    def _save_current_pool_to_dir(self):
+        pool_src = os.path.join(BASE_DIR, "ip_pool.txt")
+        if not os.path.exists(pool_src):
+            self.write_log("⚠ ip_pool.txt not found — run Setup IP Pool first")
+            return
+
+        os.makedirs(IP_POOL_DIR, exist_ok=True)
+
+        ip_ver     = self._active_ip_version()
+        prefix_len = self._get_prefix_len()
+        timestamp  = time.strftime("%Y%m%d_%H%M%S")
+        suggested  = f"pool_{ip_ver}_{timestamp}"
+
+        dlg = SavePoolDialog(self, IP_POOL_DIR, suggested)
+        if dlg.result_name is None:
+            return  # užívateľ zrušil
+
+        dest = os.path.join(IP_POOL_DIR, dlg.result_name + ".txt")
+
+        if dlg.result_mode == "append" and dlg.result_target and os.path.exists(dlg.result_target):
+            # ── Merge ─────────────────────────────────────────────
+            # Načítaj oba súbory cez jednotný parser
+            existing = parse_pool_lines(dlg.result_target)   # [(ip, prefix), ...]
+            new_ips  = parse_pool_lines(pool_src)             # [(ip, prefix), ...]
+
+            # Deduplikuj podľa samotnej IP adresy (ignoruj prefix pri porovnaní)
+            seen_ips = {ip for ip, _ in existing}
+            added    = 0
+            merged   = list(existing)
+            for ip, prefix in new_ips:
+                if ip not in seen_ips:
+                    # Doplň prefix ak chýba
+                    merged.append((ip, prefix if prefix else prefix_len))
+                    seen_ips.add(ip)
+                    added += 1
+
+            with open(dest, "w") as f:
+                for ip, prefix in merged:
+                    p = prefix if prefix else prefix_len
+                    f.write(f"{ip}/{p}\n")
+
+            self.write_log(
+                f"🔀 Merge: {len(existing)} existing + {added} new = {len(merged)} total IPs"
+            )
+        else:
+            # ── Jednoduchá kópia — ip_pool.txt už je v IP/prefix formáte ──
+            # Overíme a prípadne doplníme prefix pre staré záznamy bez neho
+            entries = parse_pool_lines(pool_src)
+            needs_rewrite = any(p is None for _, p in entries)
+
+            if needs_rewrite:
+                with open(dest, "w") as f:
+                    for ip, prefix in entries:
+                        p = prefix if prefix else prefix_len
+                        f.write(f"{ip}/{p}\n")
+            else:
+                shutil.copy2(pool_src, dest)   # priama kópia, zachová mtime
+
+        fname      = os.path.basename(dest)
+        pool_count = len(parse_pool_lines(dest))
+        self.write_log(
+            f"💾 Pool saved → ip_pool/{fname}  "
+            f"({pool_count} IPs, /{prefix_len}, {ip_ver.upper()})"
+        )
+
+    # ================================================================
     # CLEANUP
     # ================================================================
 
@@ -1936,20 +2356,48 @@ class LocustGUI(ctk.CTk):
         try:
             self.write_log("=" * 60)
             self.write_log("▶ Removing IP pool from interface...")
-            ip_ver     = self._active_ip_version()
-            prefix_len = (self.entries["ipv4prefix"].get()
-                          if ip_ver == "ipv4"
-                          else self.entries["ipv6rangeprefix"].get())
-            remove_pool(
-                ip_start   = self._get_ip_start(),
-                ip_end     = self._get_ip_end(),
-                interface  = self.get("interface"),
-                pool_file  = os.path.join(BASE_DIR, "ip_pool.txt"),
-                ip_version = ip_ver,
-                ip_list    = self._get_ip_list(),
-                prefix_len = prefix_len,
-            )
-            self.write_log("✓ Cleanup complete")
+            prefix_len = self._get_prefix_len()
+            interface  = self.get("interface")
+            pool_file  = os.path.join(BASE_DIR, "ip_pool.txt")
+
+            if os.path.exists(pool_file):
+                entries = parse_pool_lines(pool_file)
+            else:
+                # Fallback: použi GUI hodnoty (len aktívna verzia)
+                entries = [(ip, None) for ip in self._get_ip_list()]
+
+            if not entries:
+                self.write_log("⚠ ip_pool.txt is empty — nothing to remove")
+                return
+
+            # ── Zoskup záznamy podľa (ip_version, prefix) ─────────────────
+            # Každá unikátna kombinácia verzie a prefixu dostane vlastné volanie
+            # remove_pool — takto sa zmažú aj IPv4/28 aj IPv4/30 aj IPv6/64 atď.
+            from collections import defaultdict
+            groups = defaultdict(list)
+            for ip, p in entries:
+                ver    = "ipv6" if is_ipv6(ip) else "ipv4"
+                prefix = p if p else ("128" if ver == "ipv6" else prefix_len)
+                groups[(ver, prefix)].append(ip)
+
+            total_removed = 0
+            for (ver, pfx), ip_list in groups.items():
+                self.write_log(
+                    f"🗑 Removing {len(ip_list)} {ver.upper()} addresses (/{pfx})..."
+                )
+                remove_pool(
+                    ip_start   = ip_list[0],
+                    ip_end     = ip_list[-1],
+                    interface  = interface,
+                    pool_file  = pool_file,
+                    ip_version = ver,
+                    ip_list    = ip_list,
+                    prefix_len = pfx,
+                )
+                total_removed += len(ip_list)
+                self.write_log(f"  ✓ {ver.upper()} /{pfx} — done")
+
+            self.write_log(f"✓ Cleanup complete — {total_removed} addresses removed")
             self.write_log("=" * 60)
         except Exception as e:
             self.write_log(f"✗ Cleanup error: {e}")

@@ -148,8 +148,8 @@ def load_ip_pool():
         sys.exit(1)
     try:
         with open(IP_POOL_FILE) as f:
-            ips = [line.strip() for line in f
-                   if line.strip() and not line.startswith("#")]
+            ips = [line.strip().split("/")[0] for line in f
+                if line.strip() and not line.startswith("#")]
         if not ips:
             print(f"ERROR: {IP_POOL_FILE} is empty!")
             sys.exit(1)

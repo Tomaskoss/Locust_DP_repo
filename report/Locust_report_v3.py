@@ -5,6 +5,7 @@ matplotlib.use('Agg')
 import os
 import sys
 import pandas as pd
+import json
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from reportlab.lib.pagesizes import A4
@@ -201,6 +202,76 @@ def compute_duration(start_str, end_str):
             return f"{s:.1f}s"
     except Exception:
         return "Unknown"
+        
+def add_stages_table(story, S, base_dir):
+    stages_path = os.path.join(base_dir, "stages.json")
+    if not os.path.exists(stages_path):
+        return
+    try:
+        with open(stages_path) as f:
+            stages = json.load(f)
+        if not stages:
+            return
+
+        import json as _json
+
+        S_head = ParagraphStyle("sh", fontSize=9, textColor=colors.white,
+                                 fontName="Helvetica-Bold", alignment=TA_CENTER)
+        S_cell = ParagraphStyle("sc", fontSize=9, textColor=C_TEXT,
+                                 alignment=TA_CENTER, leading=12)
+
+        rows = [[
+            Paragraph("Stage", S_head),
+            Paragraph("Duration (s)", S_head),
+            Paragraph("Users", S_head),
+            Paragraph("Spawn Rate", S_head),
+            Paragraph("Cumulative Time", S_head),
+        ]]
+
+        cumulative = 0
+        for i, stage in enumerate(stages, 1):
+            duration   = int(stage.get("duration",   0))
+            users      = int(stage.get("users",      0))
+            spawn_rate = int(stage.get("spawn_rate", 0))
+            cumulative = duration  # duration je absolútny čas v LoadTestShape
+
+            m, s = divmod(duration, 60)
+            h, m = divmod(m, 60)
+            if h > 0:
+                cum_str = f"{h}h {m}m {s}s"
+            elif m > 0:
+                cum_str = f"{m}m {s}s"
+            else:
+                cum_str = f"{s}s"
+
+            rows.append([
+                Paragraph(str(i),          S_cell),
+                Paragraph(str(duration),   S_cell),
+                Paragraph(str(users),      S_cell),
+                Paragraph(str(spawn_rate), S_cell),
+                Paragraph(cum_str,         S_cell),
+            ])
+
+        col_w = (PAGE_W - 2 * MARGIN) / 5
+        t = Table(rows, colWidths=[col_w] * 5)
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), C_PRIMARY_DARK),
+            ("ROWBACKGROUNDS",(0, 1), (-1,-1), [C_WHITE, C_ROW_ALT]),
+            ("GRID",          (0, 0), (-1,-1), 0.4, C_BORDER),
+            ("LEFTPADDING",   (0, 0), (-1,-1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1,-1), 6),
+            ("TOPPADDING",    (0, 0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1,-1), 5),
+            ("VALIGN",        (0, 0), (-1,-1), "MIDDLE"),
+        ]))
+
+        story.append(ColorBand("  Test Stages"))
+        story.append(Spacer(1, 8))
+        story.append(t)
+        story.append(Spacer(1, 14))
+
+    except Exception as e:
+        print(f"Warning: Could not load stages: {e}")
 
 # ================================================================
 # TABLE HELPERS
@@ -671,7 +742,7 @@ def create_pdf_report(stats_file, history_file, output_file,
          Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
-
+  
     # ── Comment ─────────────────────────────────────────────────
     if comment and comment.strip():
         story.append(ColorBand("  Comment", bg=colors.HexColor("#5F6368")))
@@ -710,6 +781,8 @@ def create_pdf_report(stats_file, history_file, output_file,
     ], col_widths=[200, None]))
     story.append(Spacer(1, 14))
     story.append(PageBreak())
+    add_stages_table(story, S, BASE_DIR)
+    story.append(PageBreak())
     # ── Failures OVERVIEW ──────────────────────────────────────
     if os.path.exists(FAILURES_FILE):
         fdf = pd.read_csv(FAILURES_FILE)
@@ -717,27 +790,36 @@ def create_pdf_report(stats_file, history_file, output_file,
             story.append(ColorBand("Failure Details", bg=C_DANGER))
             story.append(Spacer(1, 8))
 
-            rows = [["Method", "Endpoint", "Occurrences", "Error"]]
+            S_cell = ParagraphStyle("fcell", fontSize=8, textColor=C_TEXT, leading=11,
+                         wordWrap="CJK")
+            S_head = ParagraphStyle("fhead", fontSize=8, textColor=colors.white,
+                         fontName="Helvetica-Bold", leading=11)
+
+            rows = [[
+                Paragraph("Method",      S_head),
+                Paragraph("Endpoint",    S_head),
+                Paragraph("Occurrences", S_head),
+                Paragraph("Error",       S_head),
+            ]]
             for _, row in fdf.iterrows():
+                error_text = str(row.get("Error", "")).replace("<", "&lt;").replace(">", "&gt;")
                 rows.append([
-                    str(row.get("Method", "")),
-                    str(row.get("Name", "")),
-                    str(row.get("Occurrences", "")),
-                    str(row.get("Error", ""))[:80],  # skráť dlhé správy
+                    Paragraph(str(row.get("Method", "")),      S_cell),
+                    Paragraph(str(row.get("Name",   "")),      S_cell),
+                    Paragraph(str(row.get("Occurrences", "")), S_cell),
+                    Paragraph(error_text,                      S_cell),
                 ])
 
-            t = Table(rows, colWidths=[40, 80, 60, 270])
+            t = Table(rows, colWidths=[45, 100, 55, 250])
             t.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), C_DANGER),
-                ("TEXTCOLOR",  (0,0), (-1,0), colors.white),
-                ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
-                ("FONTSIZE",   (0,0), (-1,-1), 8),
-                ("ROWBACKGROUNDS", (0,1), (-1,-1), [C_WHITE, C_ROW_ALT]),
-                ("GRID",       (0,0), (-1,-1), 0.4, C_BORDER),
-                ("LEFTPADDING",(0,0), (-1,-1), 6),
-                ("RIGHTPADDING",(0,0), (-1,-1), 6),
-                ("TOPPADDING", (0,0), (-1,-1), 4),
-                ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+                ("BACKGROUND",    (0, 0), (-1, 0), C_DANGER),
+                ("ROWBACKGROUNDS",(0, 1), (-1,-1), [C_WHITE, C_ROW_ALT]),
+                ("GRID",          (0, 0), (-1,-1), 0.4, C_BORDER),
+                ("LEFTPADDING",   (0, 0), (-1,-1), 6),
+                ("RIGHTPADDING",  (0, 0), (-1,-1), 6),
+                ("TOPPADDING",    (0, 0), (-1,-1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1,-1), 4),
+                ("VALIGN",        (0, 0), (-1,-1), "TOP"),
             ]))
             story.append(t)
             story.append(Spacer(1, 14))

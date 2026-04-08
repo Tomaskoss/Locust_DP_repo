@@ -6,6 +6,7 @@ __pycache__/
 # Generované výstupy testov
 *.csv
 *.pdf
+stages.json
 topology_diagram.png
 ip_pool.txt
 # OS súbory
@@ -16,3 +17,4 @@ config.env
 __pycache__/
 *.pyc
 *.pyo
+*.txt
