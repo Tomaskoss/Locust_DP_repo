@@ -9,6 +9,7 @@ __pycache__/
 stages.json
 topology_diagram.png
 ip_pool.txt
+stages.json
 # OS súbory
 .DS_Store
 Thumbs.db

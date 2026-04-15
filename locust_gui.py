@@ -2253,6 +2253,7 @@ class LocustGUI(ctk.CTk):
             create_pdf_report(
                 stats_file      = os.path.join(DATA_DIR, "report_stats.csv"),
                 history_file    = os.path.join(DATA_DIR, "report_stats_history.csv"),
+                reach_file   = os.path.join(DATA_DIR, "reachability.csv"),
                 output_file     = pdf_path,
                 meta_file       = os.path.join(DATA_DIR, "report_metadata.csv"),
                 network_file    = os.path.join(DATA_DIR, "network_usage.csv"),
@@ -2266,6 +2267,7 @@ class LocustGUI(ctk.CTk):
                 test_type       = test_type_cfg,
                 src_ports       = self.get("src_ports") or None,
                 reach_src_ip    = self.get("reach_src_ip") or self._get_ip_start(),
+                reach_timeout = float(self.get("reach_timeout") or 5),
                 sign            = sign,
                 p12_path        = p12_path,
                 p12_pass        = p12_pass,

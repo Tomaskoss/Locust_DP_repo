@@ -26,25 +26,26 @@ DATA_DIR   = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # === CONFIGURATION ===
-STATS_FILE   = os.path.join(DATA_DIR,   "report_stats.csv")
-HISTORY_FILE = os.path.join(DATA_DIR,   "report_stats_history.csv")
-NETWORK_FILE = os.path.join(DATA_DIR,   "network_usage.csv")
-META_FILE    = os.path.join(DATA_DIR,   "report_metadata.csv")
-PDF_FILE     = os.path.join(REPORT_DIR, "Locust_Report.pdf")
+STATS_FILE    = os.path.join(DATA_DIR, "report_stats.csv")
+HISTORY_FILE  = os.path.join(DATA_DIR, "report_stats_history.csv")
+NETWORK_FILE  = os.path.join(DATA_DIR, "network_usage.csv")
+META_FILE     = os.path.join(DATA_DIR, "report_metadata.csv")
+PDF_FILE      = os.path.join(REPORT_DIR, "Locust_Report.pdf")
 FAILURES_FILE = os.path.join(DATA_DIR, "report_failures.csv")
+REACH_FILE    = os.path.join(DATA_DIR, "reachability.csv")   # <-- NOVÉ
 
 # Biele stránky — text musí byť tmavý
-C_TEXT       = colors.HexColor("#1a1a1a")   # tmavý text (čitateľný na bielom)
-C_TEXT_MUTED = colors.HexColor("#555555")   # tlmený tmavý text
+C_TEXT       = colors.HexColor("#1a1a1a")
+C_TEXT_MUTED = colors.HexColor("#555555")
 
-# Akcenty zostávajú z GUI témy
+# Akcenty
 C_PRIMARY      = colors.HexColor("#2a5f3a")
 C_PRIMARY_DARK = colors.HexColor("#1e4a2c")
 C_ACCENT       = colors.HexColor("#2a5f3a")
 C_DANGER       = colors.HexColor("#922b21")
-C_SURFACE      = colors.HexColor("#f5f5f5")   # svetlosivé pozadie kariet
+C_SURFACE      = colors.HexColor("#f5f5f5")
 C_SURFACE2     = colors.HexColor("#ebebeb")
-C_ROW_ALT      = colors.HexColor("#f0f5f1")   # jemne zelenkastý riadok
+C_ROW_ALT      = colors.HexColor("#f0f5f1")
 C_BORDER       = colors.HexColor("#cccccc")
 C_WHITE        = colors.white
 
@@ -131,7 +132,7 @@ def _page_template(canvas, doc):
 # ================================================================
 
 def generate_topology_diagram(target_ip=None, source_ip=None,
-                                interface=None, output_file=None, 
+                                interface=None, output_file=None,
                                 reach_src_ip=None):
     if output_file is None:
         output_file = os.path.join(REPORT_DIR, "topology_diagram.png")
@@ -139,10 +140,10 @@ def generate_topology_diagram(target_ip=None, source_ip=None,
         sys.path.insert(0, os.path.join(BASE_DIR, "network"))
         from Create_topology import create_topology_diagram
         create_topology_diagram(
-            target_ip   = target_ip   or "Unknown",
-            source_ip   = source_ip   or "Unknown",
-            interface   = interface   or "ens33",
-            output_file = output_file,
+            target_ip    = target_ip    or "Unknown",
+            source_ip    = source_ip    or "Unknown",
+            interface    = interface    or "ens33",
+            output_file  = output_file,
             reach_src_ip = reach_src_ip
         )
         print("✓ Topology diagram generated")
@@ -150,7 +151,8 @@ def generate_topology_diagram(target_ip=None, source_ip=None,
     except Exception as e:
         print(f"✗ Error generating topology: {e}")
         return False
-        
+
+
 def _get_os_port_range():
     try:
         with open("/proc/sys/net/ipv4/ip_local_port_range") as f:
@@ -202,7 +204,8 @@ def compute_duration(start_str, end_str):
             return f"{s:.1f}s"
     except Exception:
         return "Unknown"
-        
+
+
 def add_stages_table(story, S, base_dir):
     stages_path = os.path.join(base_dir, "stages.json")
     if not os.path.exists(stages_path):
@@ -213,28 +216,23 @@ def add_stages_table(story, S, base_dir):
         if not stages:
             return
 
-        import json as _json
-
         S_head = ParagraphStyle("sh", fontSize=9, textColor=colors.white,
                                  fontName="Helvetica-Bold", alignment=TA_CENTER)
         S_cell = ParagraphStyle("sc", fontSize=9, textColor=C_TEXT,
                                  alignment=TA_CENTER, leading=12)
 
         rows = [[
-            Paragraph("Stage", S_head),
-            Paragraph("Duration (s)", S_head),
-            Paragraph("Users", S_head),
-            Paragraph("Spawn Rate", S_head),
+            Paragraph("Stage",           S_head),
+            Paragraph("Duration (s)",    S_head),
+            Paragraph("Users",           S_head),
+            Paragraph("Spawn Rate",      S_head),
             Paragraph("Cumulative Time", S_head),
         ]]
 
-        cumulative = 0
         for i, stage in enumerate(stages, 1):
             duration   = int(stage.get("duration",   0))
             users      = int(stage.get("users",      0))
             spawn_rate = int(stage.get("spawn_rate", 0))
-            cumulative = duration  # duration je absolútny čas v LoadTestShape
-
             m, s = divmod(duration, 60)
             h, m = divmod(m, 60)
             if h > 0:
@@ -272,6 +270,7 @@ def add_stages_table(story, S, base_dir):
 
     except Exception as e:
         print(f"Warning: Could not load stages: {e}")
+
 
 # ================================================================
 # TABLE HELPERS
@@ -419,6 +418,203 @@ def add_time_series_charts(history_df, story):
         story.append(Spacer(1, 10))
 
 
+# ================================================================
+# REACHABILITY FUNCTIONS  <-- NOVÉ
+# ================================================================
+
+def load_reachability_data(reach_file):
+    """
+    Načíta reachability.csv a vráti (reachable_count, unreachable_count, df).
+    Sonda je reachable ak status_code je 200-299.
+    Vracia (None, None, None) ak súbor neexistuje alebo je prázdny.
+    """
+    if not os.path.exists(reach_file):
+        print(f"Reachability file not found: {reach_file}")
+        return None, None, None
+    try:
+        df = pd.read_csv(reach_file)
+        if df.empty:
+            return None, None, None
+        df["reachable"] = (df["status_code"] >= 200) & (df["status_code"] < 300)
+        reachable_count   = int(df["reachable"].sum())
+        unreachable_count = int((~df["reachable"]).sum())
+        print(f"✓ Reachability data loaded: {reachable_count} reachable, {unreachable_count} unreachable")
+        return reachable_count, unreachable_count, df
+    except Exception as e:
+        print(f"Error loading reachability data: {e}")
+        return None, None, None
+
+def add_reachability_delay_chart(df, story, reach_timeout_s=None):
+
+    try:
+        df = df.copy()
+        df["timestamp"] = pd.to_datetime(df["unix_timestamp"], unit="s")
+        df["delay_ms"]  = df["elapsed_time_s"] * 1000.0
+        df["reachable"] = (df["status_code"] >= 200) & (df["status_code"] < 300)
+
+        # Pre nedostupné sondy (timeout/error) nastavíme delay na hodnotu timeoutu
+        # aby bolo vidno "plný timeout" v grafe, nie 0
+        if reach_timeout_s is not None:
+            df.loc[~df["reachable"], "delay_ms"] = reach_timeout_s * 1000.0
+
+        t_start = df["timestamp"].iloc[0]
+        t_end   = df["timestamp"].iloc[-1]
+
+        p_delay = os.path.join(REPORT_DIR, "chart_reach_delay.png")
+        fig, ax = plt.subplots(figsize=(7.5, 3.5))
+
+        # ── Tieňovanie nedostupných intervalov ──────────────────────
+        in_fail = False
+        fail_start = None
+        for _, row in df.iterrows():
+            if not row["reachable"] and not in_fail:
+                fail_start = row["timestamp"]
+                in_fail = True
+            elif row["reachable"] and in_fail:
+                ax.axvspan(fail_start, row["timestamp"],
+                           color="#EA4335", alpha=0.12, zorder=1)
+                in_fail = False
+        if in_fail and fail_start is not None:
+            ax.axvspan(fail_start, t_end,
+                       color="#EA4335", alpha=0.12, zorder=1)
+
+        # ── Segmentovaná farebn čiara ────────────────────────────────
+        # Kreslíme každý úsek medzi dvojicou bodov — zelená ak oba reachable, inak červená
+        for i in range(len(df) - 1):
+            row_a = df.iloc[i]
+            row_b = df.iloc[i + 1]
+            color = "#34A853" if (row_a["reachable"] and row_b["reachable"]) else "#EA4335"
+            ax.plot([row_a["timestamp"], row_b["timestamp"]],
+                    [row_a["delay_ms"],  row_b["delay_ms"]],
+                    color=color, linewidth=1.8, zorder=2)
+
+        # ── Body ────────────────────────────────────────────────────
+        reach_mask   = df["reachable"]
+        unreach_mask = ~df["reachable"]
+        if reach_mask.any():
+            ax.scatter(df.loc[reach_mask, "timestamp"],
+                       df.loc[reach_mask, "delay_ms"],
+                       color="#34A853", s=18, zorder=4, label="Reachable")
+        if unreach_mask.any():
+            ax.scatter(df.loc[unreach_mask, "timestamp"],
+                       df.loc[unreach_mask, "delay_ms"],
+                       color="#EA4335", s=28, marker="x", linewidths=1.8,
+                       zorder=5, label="Unreachable (timeout/error)")
+
+        # ── Prahová hodnota (timeout) ────────────────────────────────
+        if reach_timeout_s is not None:
+            threshold_ms = reach_timeout_s * 1000.0
+            ax.axhline(y=threshold_ms, color="#EA4335", linestyle="--",
+                       linewidth=1.5, alpha=0.85, zorder=3,
+                       label=f"Timeout threshold ({reach_timeout_s} s = {threshold_ms:.0f} ms)")
+            # Drobný popisok priamo na čiare
+            ax.text(t_end, threshold_ms,
+                    f" {threshold_ms:.0f} ms",
+                    va="center", ha="left",
+                    fontsize=7, color="#EA4335",
+                    transform=ax.get_yaxis_transform() if False else ax.transData)
+
+        # ── Os X — dátum+čas, prvý a posledný tick vždy viditeľný ──
+        import matplotlib.dates as mdates
+        total_seconds = (t_end - t_start).total_seconds()
+        if total_seconds <= 300:
+            locator = mdates.SecondLocator(interval=max(1, int(total_seconds / 8)))
+            formatter = mdates.DateFormatter("%H:%M:%S")
+        elif total_seconds <= 3600:
+            locator = mdates.MinuteLocator(interval=max(1, int(total_seconds / 60 / 8)))
+            formatter = mdates.DateFormatter("%H:%M:%S")
+        elif total_seconds <= 86400:
+            locator = mdates.MinuteLocator(interval=max(5, int(total_seconds / 60 / 8)))
+            formatter = mdates.DateFormatter("%d.%m %H:%M")
+        else:
+            locator = mdates.HourLocator(interval=max(1, int(total_seconds / 3600 / 8)))
+            formatter = mdates.DateFormatter("%d.%m %H:%M")
+
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(formatter)
+
+        # Prvý a posledný tick — dátum + čas
+        ax.set_xlim(t_start, t_end)
+        existing_ticks = list(ax.get_xticks())
+        from matplotlib.dates import date2num, num2date
+        extra = [date2num(t_start), date2num(t_end)]
+        ax.set_xticks(sorted(set(existing_ticks + extra)))
+
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=25,
+                 ha="right", fontsize=7)
+
+        ax.set_ylabel("Response Delay (ms)")
+        ax.set_xlabel("")
+        ax.legend(fontsize=7.5, framealpha=0.85, loc="upper left")
+
+        _apply_chart_style(ax, "Reachability — Response Delay Over Time")
+
+        # Y-os — nezačína od 0 ak sú hodnoty ďaleko od 0
+        y_min = max(0, df["delay_ms"].min() * 0.8)
+        y_max = df["delay_ms"].max() * 1.15
+        if reach_timeout_s:
+            y_max = max(y_max, reach_timeout_s * 1000 * 1.1)
+        ax.set_ylim(bottom=y_min, top=y_max)
+
+        save_chart(p_delay, dpi=200)
+        story.append(Image(p_delay, width=470, height=220))
+        story.append(Spacer(1, 6))
+
+
+        # ── tabuľka pod grafom ────────────────────────────
+        reach_df_ok = df[df["reachable"]]
+        total_probes      = len(df)
+        reachable_count   = int(df["reachable"].sum())
+        unreachable_count = total_probes - reachable_count
+        avg_delay_reach   = (
+            f"{reach_df_ok['elapsed_time_s'].mean() * 1000:.1f} ms"
+            if len(reach_df_ok) > 0 else "—"
+        )
+
+        S_hd = ParagraphStyle("dh", fontSize=9, textColor=C_WHITE,
+                               fontName="Helvetica-Bold", alignment=TA_CENTER)
+        S_cd = ParagraphStyle("dc", fontSize=9, textColor=C_TEXT,
+                               fontName="Helvetica-Bold", alignment=TA_CENTER, leading=13)
+
+        cw = (PAGE_W - 2 * MARGIN) / 4
+        compact_table = Table(
+            [
+                [
+                    Paragraph("Total probes",          S_hd),
+                    Paragraph("Reachable",              S_hd),
+                    Paragraph("Unreachable",            S_hd),
+                    Paragraph("Avg delay (reachable)",  S_hd),
+                ],
+                [
+                    Paragraph(str(total_probes),      S_cd),
+                    Paragraph(str(reachable_count),   S_cd),
+                    Paragraph(str(unreachable_count), S_cd),
+                    Paragraph(avg_delay_reach,         S_cd),
+                ],
+            ],
+            colWidths=[cw] * 4
+        )
+        compact_table.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), C_PRIMARY_DARK),
+            ("BACKGROUND",    (0, 1), (-1, 1), C_WHITE),
+            ("BACKGROUND",    (2, 1), (2, 1),
+             colors.HexColor("#FDECEA") if unreachable_count > 0 else C_WHITE),
+            ("GRID",          (0, 0), (-1, -1), 0.4, C_BORDER),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(compact_table)
+        story.append(Spacer(1, 12))
+
+    except Exception as e:
+        print(f"Error creating delay chart: {e}")
+        import traceback; traceback.print_exc()
+
+
 def add_network_traffic_charts(network_file, history_file, story,
                                failure_threshold=0.5):
     if not os.path.exists(network_file):
@@ -445,7 +641,6 @@ def add_network_traffic_charts(network_file, history_file, story,
         p4    = os.path.join(REPORT_DIR, "chart_network_total.png")
         rx_mb = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / (1024 * 1024)
         tx_mb = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / (1024 * 1024)
-        
         rx_mb = rx_mb.clip(lower=0)
         tx_mb = tx_mb.clip(lower=0)
 
@@ -490,16 +685,17 @@ def add_network_traffic_charts(network_file, history_file, story,
 
         rx_kb = ((network_df["rx_total"] - network_df["rx_total"].iloc[0]) / 1024).clip(lower=0)
         tx_kb = ((network_df["tx_total"] - network_df["tx_total"].iloc[0]) / 1024).clip(lower=0)
-        rx_kb  = rx_kb.iloc[1:]
-        tx_kb  = tx_kb.iloc[1:]
+        rx_kb = rx_kb.iloc[1:]
+        tx_kb = tx_kb.iloc[1:]
         rx_kb = rx_kb[rx_kb > 0]
         tx_kb = tx_kb[tx_kb > 0]
-        # threshold = napr. 1 kB/s (HTTP response je vždy väčší)
-        TRANSFER_THRESHOLD_rxs = 1.0  # kB/s
-        TRANSFER_THRESHOLD_txs = 1.0  # kB/s
+
+        TRANSFER_THRESHOLD_rxs = 1.0
+        TRANSFER_THRESHOLD_txs = 1.0
 
         rxs_nz = network_df[network_df['rx_kbps'] > TRANSFER_THRESHOLD_rxs]['rx_kbps']
         txs_nz = network_df[network_df['tx_kbps'] > TRANSFER_THRESHOLD_txs]['tx_kbps']
+
         def _stat(s):
             return (
                 s.min()  if len(s) > 0 else 0,
@@ -588,6 +784,7 @@ def add_network_traffic_charts(network_file, history_file, story,
 
 
 # ================================================================
+# SIGNING
 # ================================================================
 
 def sign_report(input_path, output_path,
@@ -625,7 +822,10 @@ def sign_report(input_path, output_path,
 # ================================================================
 
 def create_pdf_report(stats_file, history_file, output_file,
-                      meta_file=None, network_file=None, comment=None,
+                      meta_file=None, network_file=None,
+                      reach_file=None,                         # <-- NOVÉ
+                      reach_timeout=None,                      # <-- NOVÉ timeout threshold v sekundách
+                      comment=None,
                       target_ip=None, source_ip=None, interface=None,
                       reach_threshold=0.5, test_type=None,
                       src_ports=None, reach_src_ip=None,
@@ -634,6 +834,14 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     if meta_file    is None: meta_file    = META_FILE
     if network_file is None: network_file = NETWORK_FILE
+    if reach_file   is None: reach_file   = REACH_FILE        # <-- NOVÉ
+    if reach_timeout is None:
+        try:
+            import os as _os
+            _rt = _os.getenv("REACH_TIMEOUT")
+            reach_timeout = float(_rt) if _rt else None
+        except Exception:
+            reach_timeout = None
 
     if not os.path.exists(stats_file):
         print(f"CSV file '{stats_file}' not found.")
@@ -658,6 +866,9 @@ def create_pdf_report(stats_file, history_file, output_file,
     fails_s      = round(data_row["Failures/s"], 2)
     avg_size     = round(data_row["Average Content Size"], 2)
 
+    # Načítaj reachability dáta zo sond  <-- NOVÉ
+    reach_reachable, reach_unreachable, reach_df = load_reachability_data(reach_file)
+
     start_time, end_time, test_type_meta, target_host, target_ip_meta, used_ips = \
         load_test_times(meta_file)
 
@@ -673,10 +884,10 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
     generate_topology_diagram(
-        target_ip   = target_ip,
-        source_ip   = source_ip,
-        interface   = interface,
-        output_file = topology_output,
+        target_ip    = target_ip,
+        source_ip    = source_ip,
+        interface    = interface,
+        output_file  = topology_output,
         reach_src_ip = reach_src_ip
     )
 
@@ -736,13 +947,13 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
         [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
         [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
-        [Paragraph("Source ports", S["label"]), Paragraph(str(src_ports) if src_ports else _get_os_port_range(), S["value"])],
+        [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else _get_os_port_range(), S["value"])],
         [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
          Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
     ], col_widths=[160, None]))
     story.append(Spacer(1, 14))
-  
+
     # ── Comment ─────────────────────────────────────────────────
     if comment and comment.strip():
         story.append(ColorBand("  Comment", bg=colors.HexColor("#5F6368")))
@@ -783,6 +994,7 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(PageBreak())
     add_stages_table(story, S, BASE_DIR)
     story.append(PageBreak())
+
     # ── Failures OVERVIEW ──────────────────────────────────────
     if os.path.exists(FAILURES_FILE):
         fdf = pd.read_csv(FAILURES_FILE)
@@ -824,6 +1036,7 @@ def create_pdf_report(stats_file, history_file, output_file,
             story.append(t)
             story.append(Spacer(1, 14))
             story.append(PageBreak())
+
     # ── TOPOLOGY ─────────────────────────────────────────────────
     if os.path.exists(topology_output):
         story.append(ColorBand("  Network Topology"))
@@ -838,13 +1051,33 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(Spacer(1, 16))
         story.append(PageBreak())
 
-    # ── PIE CHART ─────────────────────────────────────────────────
+    # ── REACHABILITY  (pie chart + timeline)  <-- UPRAVENÉ ────────
     p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
     story.append(ColorBand("  Reachability"))
     story.append(Spacer(1, 10))
-    sizes  = [success, fail_count] if req_count > 0 else [1, 0]
+
+    # Použi reachability.csv ak dostupné, inak fallback na Locust stats
+    if reach_reachable is not None:
+        pie_reachable   = reach_reachable
+        pie_unreachable = reach_unreachable
+        pie_total       = reach_reachable + reach_unreachable
+        pie_source_note = (
+            f"Based on {pie_total} reachability probes "
+            f"({pie_reachable} reachable, {pie_unreachable} unreachable) — source: reachability.csv"
+        )
+    else:
+        pie_reachable   = success
+        pie_unreachable = fail_count
+        pie_total       = req_count
+        pie_source_note = (
+            "reachability.csv not found — fallback to Locust request statistics "
+            f"({pie_reachable} success, {pie_unreachable} failures)"
+        )
+
+    sizes  = [pie_reachable, pie_unreachable] if pie_total > 0 else [1, 0]
     labels = ["Reachable", "Unreachable"]
     cmap   = ["#34A853", "#EA4335"]
+
     fig, ax = plt.subplots(figsize=(5, 3.5))
     wedges, _, autotexts = ax.pie(
         sizes, colors=cmap, startangle=90,
@@ -860,8 +1093,18 @@ def create_pdf_report(stats_file, history_file, output_file,
                  fontweight="bold", color="#202124")
     fig.patch.set_facecolor("white")
     save_chart(p_pie, dpi=220)
-    story.append(Image(p_pie, width=400, height=320))
-    story.append(Spacer(1, 16))
+    story.append(Image(p_pie, width=380, height=300))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        pie_source_note,
+        ParagraphStyle("src_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
+    ))
+    story.append(Spacer(1, 10))
+
+    # Timeline a delay graf sond (len ak máme reachability.csv)
+    if reach_df is not None:
+        add_reachability_delay_chart(reach_df, story, reach_timeout_s=reach_timeout)
+
     story.append(PageBreak())
 
     # ── TIME SERIES CHARTS ────────────────────────────────────────
@@ -885,7 +1128,8 @@ def create_pdf_report(stats_file, history_file, output_file,
     pdf.build(story, onFirstPage=_page_template, onLaterPages=_page_template)
 
     for f in ["chart_pie.png", "chart_rps_failures.png", "chart_response_times.png",
-              "chart_users.png", "chart_network_total.png", "chart_network_speed.png", "topology_diagram.png"]:
+              "chart_users.png", "chart_network_total.png", "chart_network_speed.png",
+              "chart_reach_timeline.png", "chart_reach_delay.png", "topology_diagram.png"]:
         full_path = os.path.join(REPORT_DIR, f)
         if os.path.exists(full_path):
             os.remove(full_path)
@@ -910,7 +1154,8 @@ def create_pdf_report(stats_file, history_file, output_file,
 # === MAIN ===
 if __name__ == "__main__":
     create_pdf_report(
-        stats_file  = STATS_FILE,
-        history_file= HISTORY_FILE,
-        output_file = PDF_FILE,
+        stats_file   = STATS_FILE,
+        history_file = HISTORY_FILE,
+        output_file  = PDF_FILE,
     )
+

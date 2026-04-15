@@ -17,7 +17,7 @@ SOURCE_IP = os.getenv("REACH_SRC_IP",    "10.10.10.20")
 URL       = os.getenv("TARGET_HOST",     "https://www.vut.cz")
 INTERVAL  = int(os.getenv("REACH_INTERVAL", 5))
 DURATION  = int(os.getenv("RUN_TIME", 10))
-TIMEOUT   = int(os.getenv("REACH_TIMEOUT",  5))   
+TIMEOUT   = float(os.getenv("REACH_TIMEOUT",  5))   
 
 
 # ============================================================
