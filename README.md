@@ -45,7 +45,8 @@
 
 | Funkcia | Popis |
 |---|---|
-| 🎨 **4 farebné témy** | Dark Blue, Dark Green, Dark Red, Locust Dark |
+| 🎨 **5 farebných tém** | Locust Dark, Navy Blue, Discord Light, Discord Darkest, Netflix |
+| 📐 **Stage presets** | 5 zabudovaných profilov záťaže (Flat, Stress, Spike, Endurance, Capacity) |
 | 🔍 **Zoom** | Ctrl+/Ctrl- na škálovanie celého GUI (50%–200%) |
 | 🌐 **IPv4 + IPv6** | Podpora rozsahov aj prefixov pre IPv6 |
 | 📡 **Network Monitor** | Sledovanie RX/TX rýchlosti v reálnom čase |
@@ -64,21 +65,26 @@
 Locust_DP_repo/
 │
 ├── locust_gui.py              # Hlavný súbor – GUI aplikácia
+├── Report_lib.py              # Zoznam pip príkazov pre inštaláciu závislostí
 ├── config.env                 # Konfiguračný súbor (auto-generovaný)
-├── ip_pool.txt                # Zoznam pridaných IP adries (auto-generovaný)
+├── ip_pool.txt                # Aktívny zoznam IP adries na rozhraní (auto-generovaný)
 ├── port_pool.txt              # Zoznam zdrojových portov (auto-generovaný)
 ├── test_config.csv            # Konfigurácia posledného testu (auto-generovaný)
+├── stages.json                # Konfigurácia fáz pre DynamicShape (auto-generovaný)
 │
-├── data/                      # Výstupné dáta z testov
+├── data/                      # Výstupné dáta z testov (auto-vytvorený)
 │   ├── report_stats.csv           # Štatistiky Locust (endpointy)
 │   ├── report_stats_history.csv   # Historické dáta Locust
 │   ├── reachability.csv           # Výsledky reachability monitoringu
 │   ├── network_usage.csv          # Sieťová prevádzka (RX/TX)
 │   └── report_metadata.csv        # Metadáta testu
 │
-├── report/                    # PDF reporty a certifikáty
+├── IP_pool/                   # Uložené a pomenované IP pool súbory (auto-vytvorený)
+│
+├── report/                    # PDF reporty, certifikáty a report modul
+│   ├── Locust_report_v3.py        # Generovanie PDF reportu (ReportLab)
 │   ├── Locust_Report.pdf          # Príklad vygenerovaného reportu
-│   ├── topology_diagram.png       # Diagram topológie siete
+│   ├── topology_diagram.png       # Diagram topológie siete (auto-generovaný)
 │   └── cert.p12                   # Certifikát pre podpisovanie (voliteľné)
 │
 ├── network/                   # Sieťové moduly
@@ -88,11 +94,8 @@ Locust_DP_repo/
 │   ├── Reachability.py            # Reachability monitoring
 │   └── Create_topology.py         # Generovanie topologického diagramu
 │
-├── report/                    # Report moduly
-│   └── Locust_report_v3.py        # Generovanie PDF reportu (ReportLab)
-│
 └── locust_tests/              # Locust testovacie súbory
-    └── Locustfile_http.py         # HTTP záťažový test
+    └── Locustfile_http.py         # HTTP záťažový test s IP/port binding
 ```
 
 ---
@@ -108,19 +111,21 @@ Locust_DP_repo/
 
 ```bash
 pip install customtkinter
+pip install CTkToolTip
 pip install requests
 pip install pandas
 pip install python-dotenv
 pip install reportlab
 pip install matplotlib
-pip install pyhanko          # pre PDF podpisovanie
-pip install pyhanko[pkcs11]  # voliteľné
+pip install locust
+pip install pyhanko[full]             # pre PDF podpisovanie
+pip install pyhanko-certvalidator     # vyžadované pyhanko
 ```
 
 Alebo jednorázovo:
 
 ```bash
-pip install customtkinter requests pandas python-dotenv reportlab matplotlib pyhanko
+pip install customtkinter CTkToolTip requests pandas python-dotenv reportlab matplotlib locust "pyhanko[full]" pyhanko-certvalidator
 ```
 
 ### Systémové nástroje
@@ -143,7 +148,7 @@ git clone https://github.com/your_username/Locust_DP_repo.git
 cd Locust_DP_repo
 
 # 2. Inštalácia závislostí
-pip install -r requirements.txt
+pip install customtkinter CTkToolTip requests pandas python-dotenv reportlab matplotlib locust "pyhanko[full]" pyhanko-certvalidator
 
 # 3. Spustenie aplikácie
 python3 locust_gui.py
@@ -179,6 +184,9 @@ REACH_TIMEOUT=5
 REACH_SRC_IP=
 REACH_INTERFACE=
 REACH_THRESHOLD=50
+SSL_VERIFY=true
+CONNECT_TIMEOUT=5
+READ_TIMEOUT=15
 ```
 
 ---
@@ -242,6 +250,20 @@ Stránka pre konfiguráciu Locust parametrov a spustenie testu.
 | **Run time (s)** | Dĺžka trvania testu v sekundách | `20` |
 | **Spawn rate** | Počet nových používateľov za sekundu | `1` |
 | **Processes** | Počet Locust procesov (`-1` = auto) | `-1` |
+
+#### Stage presets – dynamická záťaž
+
+Namiesto fixných parametrov je možné použiť **stage preset**, ktorý definuje viacfázový test cez `stages.json`. GUI obsahuje 5 zabudovaných presetov:
+
+| Preset | Popis |
+|---|---|
+| **Flat** | Konštantná záťaž – 50 používateľov po dobu 5 minút |
+| **Stress** | Postupné stupňovanie: 10 → 50 → 100 → 300 používateľov |
+| **Spike** | Nárazová záťaž: skok na 500 používateľov a späť za 90 sekúnd |
+| **Endurance** | Dlhodobý test: 25 používateľov počas 2 hodín |
+| **Capacity** | Stupňovanie throughputu: 10 → 200 používateľov s constant throughput wait |
+
+Po výbere presetu sa automaticky vygeneruje `stages.json`, ktorý `Locustfile_http.py` načíta cez `DynamicShape` (`LoadTestShape`).
 
 #### Locustfile
 - Tlačidlom **Browse** môžeš vybrať vlastný Locustfile (`.py`)
@@ -350,14 +372,15 @@ Hlavný report generátor. Zo CSV dát vytvára profesionálny PDF dokument obsa
 
 ## 🎨 Témy
 
-Aplikácia obsahuje 4 vstavaných farebných tém prepínateľných v dolnej časti sidebaru:
+Aplikácia obsahuje 5 vstavaných farebných tém prepínateľných v dolnej časti sidebaru:
 
 | Téma | Primárna farba | Popis |
 |---|---|---|
 | **Locust Dark** | `#2a5f3a` (tmavá zelená) | Predvolená – minimalistická tmavá |
-| **Dark Blue** | `#85b832` (limetková) | Tmavá s modrou základňou |
-| **Dark Green** | `#4caf50` (zelená) | Zelená na tmavom pozadí |
-| **Dark Red** | `#e53935` (červená) | Červená na tmavom pozadí |
+| **Navy Blue** | `#23395B` (tmavomodrá) | Tmavá s námorníckou modrou |
+| **Discord Light** | `#7289da` (fialová) | Discord-inšpirovaná tmavá |
+| **Discord Darkest** | `#5b73c7` (tmavá fialová) | Najtemnejší Discord variant |
+| **Netflix** | `#800000` (tmavá červená) | Čierne pozadie s červeným akcentom |
 
 > Zmena témy reštartuje aplikáciu s novými farbami (nastavenia sa zachovajú).
 
@@ -423,12 +446,20 @@ V `locust_gui.py` rozšír slovník `THEMES`:
 
 ```python
 THEMES["My Theme"] = {
-    "SIDEBAR":  "#1a1a2e",
-    "CONTENT":  "#16213e",
-    "CARD":     "#1f2b47",
-    "ACTIVE":   "#ff6b35",   # tvoja farba
-    "HOVER":    "#e55a2b",
-    ...
+    "BG_SIDEBAR":   "#1a1a2e",
+    "BG_MAIN":      "#16213e",
+    "BG_CARD":      "#1f2b47",
+    "ACCENT":       "#ff6b35",
+    "ACCENT_HOVER": "#e55a2b",
+    "FG_TEXT":      "#ffffff",
+    "FG_MUTED":     "#888888",
+    "FG_LABEL":     "#cccccc",
+    "FG_HEADER":    "#ff6b35",
+    "BG_INPUT":     "#0d0e10",
+    "BTN_DANGER":   "#922b21",
+    "BTN_START":    "#ff6b35",
+    "BTN_REPORT":   "#ff6b35",
+    "BTN_SETUP":    "#ff6b35",
 }
 ```
 
