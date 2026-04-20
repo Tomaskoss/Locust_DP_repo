@@ -41,8 +41,19 @@ if os.getenv("SSL_VERIFY", "true").lower() == "false":
 #  TIMEOUT CONFIG
 # ============================================================
 
-CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "5"))
-READ_TIMEOUT    = float(os.getenv("READ_TIMEOUT", "15"))
+try:
+    CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "5"))
+    assert CONNECT_TIMEOUT > 0
+except (ValueError, AssertionError):
+    print("WARNING: Invalid CONNECT_TIMEOUT, using default 5s")
+    CONNECT_TIMEOUT = 5.0
+
+try:
+    READ_TIMEOUT = float(os.getenv("READ_TIMEOUT", "15"))
+    assert READ_TIMEOUT > 0
+except (ValueError, AssertionError):
+    print("WARNING: Invalid READ_TIMEOUT, using default 15s")
+    READ_TIMEOUT = 15.0
 
 
 # ============================================================
@@ -351,7 +362,8 @@ class DynamicShape(LoadTestShape):
         if self._stages is None:
             try:
                 self._load()
-            except Exception:
+            except Exception as e:
+                print(f"[ERROR] DynamicShape: could not load stages.json: {e}")
                 return None
 
         t = self.get_run_time()

@@ -84,8 +84,9 @@ class NetworkMonitor:
                         continue
 
                     #  — counter overflow (uint64 wrap-around)
-                    rx_diff = rx_total if rx_total < prev_rx else rx_total - prev_rx
-                    tx_diff = tx_total if tx_total < prev_tx else tx_total - prev_tx
+                    UINT64_MAX = (1 << 64)
+                    rx_diff = (rx_total + UINT64_MAX - prev_rx) if rx_total < prev_rx else rx_total - prev_rx
+                    tx_diff = (tx_total + UINT64_MAX - prev_tx) if tx_total < prev_tx else tx_total - prev_tx
 
                     #  zabraňuje ZeroDivisionError pri jitter / malý interval
                     actual_elapsed = max(1e-6, actual_elapsed)

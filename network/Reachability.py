@@ -39,7 +39,7 @@ def validate_source_ip(ip):
             return
         except OSError:
             pass
-    raise ValueError(f"Invalid SOURCE_IP: '{ip}' — musí byť platná IPv4 alebo IPv6 adresa.")
+    raise ValueError(f"Invalid SOURCE_IP: '{ip}' — must be a valid IPv4 or IPv6 address.")
 
 
 # ============================================================

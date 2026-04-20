@@ -180,13 +180,28 @@ ZOOM_STEP = 0.1
 # ============================================================
 
 def parse_ports(port_str):
+    """Parse port string supporting ranges and combinations, e.g. '1024-2000,8080'."""
     if not port_str or not port_str.strip():
         return None
-    port_str = port_str.strip()
-    if "-" in port_str and "," not in port_str:
-        parts = port_str.split("-")
-        return list(range(int(parts[0]), int(parts[1]) + 1))
-    return [int(p.strip()) for p in port_str.split(",")]
+    result = []
+    for part in port_str.split(","):
+        part = part.strip()
+        if "-" in part:
+            try:
+                parts = part.split("-", maxsplit=1)
+                start, end = int(parts[0]), int(parts[1])
+                if start > end:
+                    print(f"WARNING: reversed port range '{part}', skipping")
+                    continue
+                result.extend(range(start, end + 1))
+            except (ValueError, IndexError):
+                print(f"WARNING: invalid port range '{part}', skipping")
+        else:
+            try:
+                result.append(int(part))
+            except ValueError:
+                print(f"WARNING: invalid port '{part}', skipping")
+    return result or None
 
 def is_ipv6(ip):
     try:
@@ -195,10 +210,16 @@ def is_ipv6(ip):
     except (socket.error, OSError):
         return False
 
-def ipv6_range_to_list(start_str, end_str):
+def ipv6_range_to_list(start_str, end_str, max_count=65536):
     import ipaddress
     start = int(ipaddress.IPv6Address(start_str))
     end   = int(ipaddress.IPv6Address(end_str))
+    total = end - start + 1
+    if total > max_count:
+        raise ValueError(
+            f"IPv6 range too large ({total:,} addresses). "
+            f"Maximum allowed is {max_count:,}. Use a smaller range or increase max_count."
+        )
     return [str(ipaddress.IPv6Address(i)) for i in range(start, end + 1)]
 
 def ipv6_prefix_to_list(prefix_str, max_count=256):
@@ -513,6 +534,8 @@ class LocustGUI(ctk.CTk):
             "ipv6rangeprefix":  os.getenv("IPV6RPREFIX", "128"),
             "processes":        os.getenv("PROCESSES"),
             "stop_timeout":     os.getenv("STOP_TIMEOUT", "60"),
+            "connect_timeout": os.getenv("CONNECT_TIMEOUT", "5"),
+            "read_timeout":    os.getenv("READ_TIMEOUT", "15"),
             "reach_interval":   os.getenv("REACH_INTERVAL"),
             "reach_timeout":    os.getenv("REACH_TIMEOUT"),
             "reach_src_ip":     os.getenv("REACH_SRC_IP", ""),
@@ -563,6 +586,9 @@ class LocustGUI(ctk.CTk):
             "IPV6RPREFIX":     self.entries["ipv6rangeprefix"].get(),
             "PROCESSES":       self.get("processes"),
             "STOP_TIMEOUT":    self.get("stop_timeout"),
+            "CONNECT_TIMEOUT": self.get("connect_timeout") or "5",
+            "READ_TIMEOUT":    self.get("read_timeout") or "15",
+            "SSL_VERIFY":      "true" if self._ssl_verify_var.get() else "false",
             "REACH_INTERVAL":  self.get("reach_interval"),
             "REACH_TIMEOUT":   self.get("reach_timeout"),
             "REACH_SRC_IP":    self.get("reach_src_ip"),
@@ -570,6 +596,24 @@ class LocustGUI(ctk.CTk):
             "REACH_THRESHOLD": self.get("reach_threshold"),
             "STAGES":          json.dumps(self._get_stages()),
         }
+        # Validate all numeric timeout fields before saving
+        timeout_fields = [
+            ("STOP_TIMEOUT",    "Stop timeout"),
+            ("REACH_TIMEOUT",   "Reach timeout"),
+            ("CONNECT_TIMEOUT", "Connect timeout"),
+            ("READ_TIMEOUT",    "Read timeout"),
+        ]
+        for env_key, label in timeout_fields:
+            val = mapping.get(env_key, "")
+            if val:
+                try:
+                    assert float(val) > 0
+                except (ValueError, AssertionError):
+                    self.write_log(
+                        f"⚠ {label} '{val}' is invalid (must be a positive number). Skipping save."
+                    )
+                    return
+
         for key, val in mapping.items():
             set_key(env_path, key, val)
         self.write_log("✓ Config saved to config.env")
@@ -1082,6 +1126,10 @@ class LocustGUI(ctk.CTk):
                         help="Time (seconds) Locust waits for running users to finish\ntheir current task after the test ends.\nIncrease for long-running requests.")
         self._field_row(card, 0, "Processes", "processes", "-1", col=2,
                         help="Number of worker processes Locust spawns.\n-1 = one process per CPU core (recommended).\n1 = single process (useful for debugging).")
+        self._field_row(card, 1, "Connect timeout (s)", "connect_timeout", "5", col=0,
+                        help="Maximum time (seconds) to establish a TCP connection.\nIncrease for slow or distant servers.")
+        self._field_row(card, 1, "Read timeout (s)", "read_timeout", "15", col=2,
+                        help="Maximum time (seconds) to wait for a server response.\nIncrease for endpoints with slow processing times.")
 
         # ── Locustfile ────────────────────────────────────────────
         s_row = self._card_header(scroll, "Locustfile", s_row)
@@ -2215,15 +2263,18 @@ class LocustGUI(ctk.CTk):
 
     def _run_reachability(self, duration, interval):
         self._reach_stop_event.clear()
-        run_reachability_check(
-            source_ip  = self.get("reach_src_ip") or self._get_ip_start(),
-            url        = self.get("target"),
-            interval   = interval,
-            duration   = duration,
-            timeout    = float(self.get("reach_timeout") or 5),
-            csv_file   = os.path.join(DATA_DIR, "reachability.csv"),
-            stop_event = self._reach_stop_event,
-        )
+        try:
+            run_reachability_check(
+                source_ip  = self.get("reach_src_ip") or self._get_ip_start(),
+                url        = self.get("target"),
+                interval   = interval,
+                duration   = duration,
+                timeout    = float(self.get("reach_timeout") or 5),
+                csv_file   = os.path.join(DATA_DIR, "reachability.csv"),
+                stop_event = self._reach_stop_event,
+            )
+        except Exception as e:
+            self.write_log(f"✗ Reachability error: {e}")
 
     # ================================================================
     # REPORT

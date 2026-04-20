@@ -122,7 +122,7 @@ def _page_template(canvas, doc):
     canvas.drawString(MARGIN, 13 * mm, "Locust Load Test Report")
     canvas.drawRightString(
         PAGE_W - MARGIN, 13 * mm,
-        f"Strana {doc.page}  •  {datetime.now().strftime('%d.%m.%Y')}"
+        f"Page {doc.page}  •  {datetime.now().strftime('%d.%m.%Y')}"
     )
     canvas.restoreState()
 
@@ -555,7 +555,7 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                     **cfg
                 )
 
-        # ── Threshold čiara ──────────────────────────────────────────
+        # ── Threshold čiara + zvýraznenie pomalých sond ─────────────
         if reach_timeout_s is not None:
             threshold_ms = reach_timeout_s * 1000.0
             ax.axhline(
@@ -577,6 +577,32 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                 color="#EA4335",
                 transform=ax.transData
             )
+
+            # Červené pozadie pre každý bod kde delay > threshold
+            over_threshold = df[df["delay_ms"] > threshold_ms]
+            if not over_threshold.empty:
+                # Červená plocha za každým pomalým bodom (±half interval)
+                half_interval = pd.Timedelta(seconds=max(1, (
+                    (t_end - t_start).total_seconds() / max(len(df), 1)
+                ) / 2))
+                for _, row in over_threshold.iterrows():
+                    ax.axvspan(
+                        row["timestamp"] - half_interval,
+                        row["timestamp"] + half_interval,
+                        color="#EA4335", alpha=0.18, zorder=1
+                    )
+
+                # Červený scatter marker na vrchu (obrys) pre pomalé body
+                ax.scatter(
+                    over_threshold["timestamp"],
+                    over_threshold["delay_ms"],
+                    facecolors="none",
+                    edgecolors="#EA4335",
+                    s=80,
+                    linewidths=2.0,
+                    zorder=5,
+                    label=f"Slow probe (> {threshold_ms:.0f} ms)"
+                )
 
         # ── Os X ─────────────────────────────────────────────────────
         import matplotlib.dates as mdates
@@ -633,6 +659,11 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
             if len(reach_ok) > 0 else "—"
         )
 
+        # Počet sond nad threshold (pomalé, ale nemuseli byť timeout)
+        slow_count = 0
+        if reach_timeout_s is not None:
+            slow_count = int((df["delay_ms"] > reach_timeout_s * 1000.0).sum())
+
         S_hd = ParagraphStyle(
             "dh",
             fontSize=8,
@@ -648,8 +679,21 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
             alignment=TA_CENTER,
             leading=13
         )
+        S_cd_red = ParagraphStyle(
+            "dc_red",
+            fontSize=9,
+            textColor=colors.HexColor("#EA4335"),
+            fontName="Helvetica-Bold",
+            alignment=TA_CENTER,
+            leading=13
+        )
 
-        cw = (PAGE_W - 2 * MARGIN) / 7
+        threshold_label = (
+            f"Slow (> {reach_timeout_s * 1000:.0f} ms)"
+            if reach_timeout_s is not None else "Slow (> threshold)"
+        )
+
+        cw = (PAGE_W - 2 * MARGIN) / 8
         compact_table = Table(
             [
                 [
@@ -659,6 +703,7 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                     Paragraph("Timeout",              S_hd),
                     Paragraph("Server error (5xx)",   S_hd),
                     Paragraph("Other error",          S_hd),
+                    Paragraph(threshold_label,        S_hd),
                     Paragraph("Avg delay (reachable)",S_hd),
                 ],
                 [
@@ -668,10 +713,11 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                     Paragraph(str(len(reach_timeout)), S_cd),
                     Paragraph(str(len(reach_5xx)),     S_cd),
                     Paragraph(str(len(reach_other)),   S_cd),
+                    Paragraph(str(slow_count),         S_cd_red if slow_count > 0 else S_cd),
                     Paragraph(avg_delay_ok,            S_cd),
                 ],
             ],
-            colWidths=[cw] * 7
+            colWidths=[cw] * 8
         )
         compact_table.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0), (-1, 0), C_PRIMARY_DARK),
@@ -684,6 +730,8 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
              colors.HexColor("#FDECEA") if len(reach_5xx) > 0 else C_WHITE),
             ("BACKGROUND",    (5, 1), (5, 1),
              colors.HexColor("#F5F5F5") if len(reach_other) > 0 else C_WHITE),
+            ("BACKGROUND",    (6, 1), (6, 1),
+             colors.HexColor("#FDECEA") if slow_count > 0 else C_WHITE),
             ("GRID",          (0, 0), (-1, -1), 0.4, C_BORDER),
             ("TOPPADDING",    (0, 0), (-1, -1), 6),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
@@ -799,7 +847,7 @@ def add_network_traffic_charts(network_file, history_file, story,
                 Paragraph(f"<b>{title}</b>",
                           ParagraphStyle("nh", fontSize=9, textColor=C_WHITE,
                                          fontName="Helvetica-Bold")),
-                Paragraph("<b>Hodnota</b>",
+                Paragraph("<b>Value</b>",
                           ParagraphStyle("nv", fontSize=9, textColor=C_WHITE,
                                          fontName="Helvetica-Bold"))
             ]] + [
@@ -937,7 +985,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         print("Stats CSV has no valid rows.")
         return
 
-    data_row     = agg.iloc[0] if not agg.empty else statsdf.iloc[-1]
+    data_row     = agg.iloc[0]  # agg non-empty guaranteed by check above
     req_count    = int(data_row["Request Count"])
     fail_count   = int(data_row["Failure Count"])
     success      = req_count - fail_count
