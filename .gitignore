@@ -21,3 +21,5 @@ __pycache__/
 *.txt
 session.json
 network/local_session.json
+!data/.gitkeep
+!IP_pool/.gitkeep
