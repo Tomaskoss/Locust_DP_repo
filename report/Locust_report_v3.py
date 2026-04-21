@@ -419,15 +419,10 @@ def add_time_series_charts(history_df, story):
 
 
 # ================================================================
-# REACHABILITY FUNCTIONS  <-- NOVÉ
+# REACHABILITY FUNCTIONS 
 # ================================================================
 
 def load_reachability_data(reach_file):
-    """
-    Načíta reachability.csv a vráti (reachable_count, unreachable_count, df).
-    Sonda je reachable ak status_code je 200-299.
-    Vracia (None, None, None) ak súbor neexistuje alebo je prázdny.
-    """
     if not os.path.exists(reach_file):
         print(f"Reachability file not found: {reach_file}")
         return None, None, None
@@ -435,9 +430,12 @@ def load_reachability_data(reach_file):
         df = pd.read_csv(reach_file)
         if df.empty:
             return None, None, None
-        df["reachable"] = (df["status_code"] >= 200) & (df["status_code"] < 500)
+
+        # Reachable = only 2xx (not 429, not 3xx)
+        df["reachable"] = (df["status_code"] >= 200) & (df["status_code"] < 300)
         reachable_count   = int(df["reachable"].sum())
         unreachable_count = int((~df["reachable"]).sum())
+
         print(f"✓ Reachability data loaded: {reachable_count} reachable, {unreachable_count} unreachable")
         return reachable_count, unreachable_count, df
     except Exception as e:
@@ -446,34 +444,30 @@ def load_reachability_data(reach_file):
 
 def add_reachability_delay_chart(df, story, reach_timeout_s=None):
     try:
+        import matplotlib.dates as mdates
+        from matplotlib.dates import date2num
+        import datetime
+
         df = df.copy()
-        df["timestamp"] = pd.to_datetime(df["unix_timestamp"], unit="s")
+        local_offset = datetime.datetime.now().astimezone().utcoffset()
+        df["timestamp"] = pd.to_datetime(df["unix_timestamp"], unit="s") + local_offset
         df["delay_ms"]  = df["elapsed_time_s"] * 1000.0
 
-        # ── PÄŤ kategórií — timeout a 5xx sú odlíšené farbou ─────────
         def classify(code):
             if 200 <= code < 300:
                 return "reachable"
             elif code == 429:
                 return "rate_limited"
             elif code == 0:
-                # status 0 = request vôbec nedorazil / exception (connection refused, timeout)
                 return "timeout"
             elif 500 <= code < 600:
                 return "error_5xx"
             else:
-                # 4xx okrem 429, alebo iné neočakávané kódy
                 return "error_other"
 
         df["category"] = df["status_code"].apply(classify)
         df["reachable"] = df["category"] == "reachable"
 
-        # ── Farby ─────────────────────────────────────────────────────
-        # Zelená   = OK
-        # Žltá     = rate-limited
-        # Oranžová = timeout (sieťová nedostupnosť, žiadna odpoveď)
-        # Červená  = HTTP 5xx (server odpovedal, ale s chybou)
-        # Šedá     = iný HTTP kód (4xx okrem 429)
         COLORS = {
             "reachable":    "#34A853",
             "rate_limited": "#F9AB00",
@@ -484,12 +478,18 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
         LABELS = {
             "reachable":    "Reachable (2xx)",
             "rate_limited": "Rate-limited (429)",
-            "timeout":      "Timeout / No response (status=0)",
+            "timeout":      "Timeout / No response",
             "error_5xx":    "Server error (5xx)",
-            "error_other":  "Other error (4xx etc.)",
+            "error_other":  "Other error (4xx)",
+        }
+        # Short label shown directly inside the shaded area
+        SHORT_LABELS = {
+            "rate_limited": "Rate\nlimited",
+            "timeout":      "Timeout",
+            "error_5xx":    "5xx Error",
+            "error_other":  "Other\nerror",
         }
 
-        # Kategórie zoradené od najhoršej — určujú farbu segmentu čiary
         SEVERITY = ["error_5xx", "timeout", "rate_limited", "error_other", "reachable"]
 
         def worse_category(cat_a, cat_b):
@@ -501,9 +501,16 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
         t_end   = df["timestamp"].iloc[-1]
 
         p_delay = os.path.join(REPORT_DIR, "chart_reach_delay.png")
-        fig, ax = plt.subplots(figsize=(7.5, 3.5))
+        fig, ax = plt.subplots(figsize=(7.5, 4.2))
 
-        # ── Tieňovanie pozadia pre problémové intervaly ──────────────
+        # ── Y axis limits (computed early — needed for label placement) ──
+        y_min = max(0, df["delay_ms"].min() * 0.8)
+        y_max = df["delay_ms"].max() * 1.30
+        if reach_timeout_s:
+            y_max = max(y_max, reach_timeout_s * 1000 * 1.15)
+        ax.set_ylim(bottom=y_min, top=y_max)
+
+        # ── Background shading + inline text label per block ─────────
         shade_color = {
             "rate_limited": "#F9AB00",
             "timeout":      "#FF6D00",
@@ -516,32 +523,53 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                 if row["category"] == cat and not in_block:
                     block_start, in_block = row["timestamp"], True
                 elif row["category"] != cat and in_block:
-                    ax.axvspan(block_start, row["timestamp"],
-                               color=color, alpha=0.10, zorder=1)
+                    block_end = row["timestamp"]
+                    ax.axvspan(block_start, block_end,
+                               color=color, alpha=0.12, zorder=1)
+                    # Inline label centered in the shaded block
+                    mid = block_start + (block_end - block_start) / 2
+                    ax.text(
+                        mid, y_max * 0.97,
+                        SHORT_LABELS[cat],
+                        fontsize=7, color=color, ha="center", va="top",
+                        fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                                  ec=color, alpha=0.85, lw=0.8),
+                        zorder=6
+                    )
                     in_block = False
             if in_block and block_start is not None:
-                ax.axvspan(block_start, t_end, color=color, alpha=0.10, zorder=1)
+                ax.axvspan(block_start, t_end, color=color, alpha=0.12, zorder=1)
+                mid = block_start + (t_end - block_start) / 2
+                ax.text(
+                    mid, y_max * 0.97,
+                    SHORT_LABELS[cat],
+                    fontsize=7, color=color, ha="center", va="top",
+                    fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                              ec=color, alpha=0.85, lw=0.8),
+                    zorder=6
+                )
 
-        # ── Segmentovaná čiara — farba = horšia zo dvoch kategórií ──
+        # ── Segmented line — color = worse of two adjacent categories ──
         for i in range(len(df) - 1):
             row_a = df.iloc[i]
             row_b = df.iloc[i + 1]
             seg_cat   = worse_category(row_a["category"], row_b["category"])
             seg_color = COLORS[seg_cat]
-
             ax.plot(
                 [row_a["timestamp"], row_b["timestamp"]],
                 [row_a["delay_ms"],  row_b["delay_ms"]],
                 color=seg_color, linewidth=1.8, zorder=2
             )
 
-        # ── Body — každá kategória zvlášť ────────────────────────────
+        # ── Scatter points — each category rendered separately ────────
         marker_cfg = {
-            "reachable":    dict(s=18, marker="o", linewidths=1.2),
-            "rate_limited": dict(s=28, marker="^", linewidths=1.5),
-            "timeout":      dict(s=32, marker="D", linewidths=1.5),
-            "error_5xx":    dict(s=32, marker="x", linewidths=2.0),
-            "error_other":  dict(s=22, marker="s", linewidths=1.2),
+            "reachable":    dict(s=18, marker="o",  linewidths=1.2),
+            "rate_limited": dict(s=28, marker="^",  linewidths=1.5),
+            "timeout":      dict(s=32, marker="D",  linewidths=1.5),
+            "error_5xx":    dict(s=32, marker="x",  linewidths=2.0),
+            "error_other":  dict(s=22, marker="s",  linewidths=1.2),
         }
         for cat, cfg in marker_cfg.items():
             mask = df["category"] == cat
@@ -555,7 +583,27 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                     **cfg
                 )
 
-        # ── Threshold čiara + zvýraznenie pomalých sond ─────────────
+        # ── "First outage" annotation ─────────────────────────────────
+        problem_cats = {"timeout", "error_5xx", "rate_limited", "error_other"}
+        first_fail_mask = df["category"].isin(problem_cats)
+        if first_fail_mask.any():
+            first_fail = df[first_fail_mask].iloc[0]
+            ax.annotate(
+                f"First outage\n{first_fail['timestamp'].strftime('%H:%M:%S')}",
+                xy=(first_fail["timestamp"], first_fail["delay_ms"]),
+                xytext=(first_fail["timestamp"],
+                        first_fail["delay_ms"] + (y_max - y_min) * 0.18),
+                fontsize=7.5,
+                color="#C62828",
+                fontweight="bold",
+                ha="center",
+                arrowprops=dict(arrowstyle="->", color="#C62828", lw=1.5),
+                bbox=dict(boxstyle="round,pad=0.3", fc="#FDECEA",
+                          ec="#EA4335", alpha=0.9, lw=0.8),
+                zorder=7
+            )
+
+        # ── Timeout threshold line + highlight slow probes ────────────
         if reach_timeout_s is not None:
             threshold_ms = reach_timeout_s * 1000.0
             ax.axhline(
@@ -568,20 +616,14 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                 label=f"Timeout threshold ({reach_timeout_s} s = {threshold_ms:.0f} ms)"
             )
             ax.text(
-                t_end,
-                threshold_ms,
+                t_end, threshold_ms,
                 f"  {threshold_ms:.0f} ms",
-                va="center",
-                ha="left",
-                fontsize=7,
-                color="#EA4335",
-                transform=ax.transData
+                va="center", ha="left", fontsize=7,
+                color="#EA4335", transform=ax.transData
             )
 
-            # Červené pozadie pre každý bod kde delay > threshold
             over_threshold = df[df["delay_ms"] > threshold_ms]
             if not over_threshold.empty:
-                # Červená plocha za každým pomalým bodom (±half interval)
                 half_interval = pd.Timedelta(seconds=max(1, (
                     (t_end - t_start).total_seconds() / max(len(df), 1)
                 ) / 2))
@@ -591,62 +633,66 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
                         row["timestamp"] + half_interval,
                         color="#EA4335", alpha=0.18, zorder=1
                     )
-
-                # Červený scatter marker na vrchu (obrys) pre pomalé body
                 ax.scatter(
                     over_threshold["timestamp"],
                     over_threshold["delay_ms"],
                     facecolors="none",
                     edgecolors="#EA4335",
-                    s=80,
-                    linewidths=2.0,
-                    zorder=5,
+                    s=80, linewidths=2.0, zorder=5,
                     label=f"Slow probe (> {threshold_ms:.0f} ms)"
                 )
 
-        # ── Os X ─────────────────────────────────────────────────────
-        import matplotlib.dates as mdates
-
+        # ── X axis — adaptive time format based on total duration ─────
         total_seconds = (t_end - t_start).total_seconds()
         if total_seconds <= 300:
-            locator   = mdates.SecondLocator(interval=max(1, int(total_seconds / 8)))
+            locator   = mdates.SecondLocator(interval=max(1, int(total_seconds / 6)))
             formatter = mdates.DateFormatter("%H:%M:%S")
         elif total_seconds <= 3600:
-            locator   = mdates.MinuteLocator(interval=max(1, int(total_seconds / 60 / 8)))
+            locator   = mdates.MinuteLocator(interval=max(1, int(total_seconds / 60 / 6)))
             formatter = mdates.DateFormatter("%H:%M:%S")
         elif total_seconds <= 86400:
-            locator   = mdates.MinuteLocator(interval=max(5, int(total_seconds / 60 / 8)))
+            locator   = mdates.MinuteLocator(interval=max(5, int(total_seconds / 60 / 6)))
             formatter = mdates.DateFormatter("%d.%m %H:%M")
         else:
-            locator   = mdates.HourLocator(interval=max(1, int(total_seconds / 3600 / 8)))
+            locator   = mdates.HourLocator(interval=max(1, int(total_seconds / 3600 / 6)))
             formatter = mdates.DateFormatter("%d.%m %H:%M")
 
         ax.xaxis.set_major_locator(locator)
         ax.xaxis.set_major_formatter(formatter)
         ax.set_xlim(t_start, t_end)
 
-        from matplotlib.dates import date2num
         existing = list(ax.get_xticks())
         ax.set_xticks(sorted(set(existing + [date2num(t_start), date2num(t_end)])))
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=25, ha="right", fontsize=7)
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=7.5)
 
         ax.set_ylabel("Response Delay (ms)")
         ax.set_xlabel("")
-        ax.legend(fontsize=7.5, framealpha=0.85, loc="upper left")
         _apply_chart_style(ax, "Reachability — Response Delay Over Time")
 
-        # ── Os Y ─────────────────────────────────────────────────────
-        y_min = max(0, df["delay_ms"].min() * 0.8)
-        y_max = df["delay_ms"].max() * 1.20
-        if reach_timeout_s:
-            y_max = max(y_max, reach_timeout_s * 1000 * 1.05)
-        ax.set_ylim(bottom=y_min, top=y_max)
+        # ── Legend outside the plot area — placed below the X axis ───
+        handles, labels_list = ax.get_legend_handles_labels()
+        ax.legend().remove()
+        fig.legend(
+            handles, labels_list,
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.01),
+            ncol=3,
+            fontsize=8,
+            framealpha=0.95,
+            frameon=True,
+            edgecolor="#DADCE0",
+            fancybox=True,
+        )
 
-        save_chart(p_delay, dpi=200)
-        story.append(Image(p_delay, width=470, height=220))
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.30)  # reserve space for legend below chart
+        plt.savefig(p_delay, dpi=200, bbox_inches="tight", facecolor="white")
+        plt.close()
+
+        story.append(Image(p_delay, width=470, height=290))
         story.append(Spacer(1, 6))
 
-        # ── Tabuľka pod grafom — timeout a 5xx zvlášť ────────────────
+        # ── Summary table below the chart ────────────────────────────
         reach_ok      = df[df["category"] == "reachable"]
         reach_rl      = df[df["category"] == "rate_limited"]
         reach_timeout = df[df["category"] == "timeout"]
@@ -659,33 +705,22 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
             if len(reach_ok) > 0 else "—"
         )
 
-        # Počet sond nad threshold (pomalé, ale nemuseli byť timeout)
+        # Count probes exceeding threshold (slow but not necessarily timed out)
         slow_count = 0
         if reach_timeout_s is not None:
             slow_count = int((df["delay_ms"] > reach_timeout_s * 1000.0).sum())
 
         S_hd = ParagraphStyle(
-            "dh",
-            fontSize=8,
-            textColor=C_WHITE,
-            fontName="Helvetica-Bold",
-            alignment=TA_CENTER
+            "dh", fontSize=8, textColor=C_WHITE,
+            fontName="Helvetica-Bold", alignment=TA_CENTER
         )
         S_cd = ParagraphStyle(
-            "dc",
-            fontSize=9,
-            textColor=C_TEXT,
-            fontName="Helvetica-Bold",
-            alignment=TA_CENTER,
-            leading=13
+            "dc", fontSize=9, textColor=C_TEXT,
+            fontName="Helvetica-Bold", alignment=TA_CENTER, leading=13
         )
         S_cd_red = ParagraphStyle(
-            "dc_red",
-            fontSize=9,
-            textColor=colors.HexColor("#EA4335"),
-            fontName="Helvetica-Bold",
-            alignment=TA_CENTER,
-            leading=13
+            "dc_red", fontSize=9, textColor=colors.HexColor("#EA4335"),
+            fontName="Helvetica-Bold", alignment=TA_CENTER, leading=13
         )
 
         threshold_label = (
@@ -697,24 +732,24 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
         compact_table = Table(
             [
                 [
-                    Paragraph("Total probes",         S_hd),
-                    Paragraph("Reachable",            S_hd),
-                    Paragraph("Rate-limited (429)",   S_hd),
-                    Paragraph("Timeout",              S_hd),
-                    Paragraph("Server error (5xx)",   S_hd),
-                    Paragraph("Other error",          S_hd),
-                    Paragraph(threshold_label,        S_hd),
-                    Paragraph("Avg delay (reachable)",S_hd),
+                    Paragraph("Total probes",          S_hd),
+                    Paragraph("Reachable",             S_hd),
+                    Paragraph("Rate-limited (429)",    S_hd),
+                    Paragraph("Timeout",               S_hd),
+                    Paragraph("Server error (5xx)",    S_hd),
+                    Paragraph("Other error",           S_hd),
+                    Paragraph(threshold_label,         S_hd),
+                    Paragraph("Avg delay (reachable)", S_hd),
                 ],
                 [
-                    Paragraph(str(total_probes),       S_cd),
-                    Paragraph(str(len(reach_ok)),      S_cd),
-                    Paragraph(str(len(reach_rl)),      S_cd),
-                    Paragraph(str(len(reach_timeout)), S_cd),
-                    Paragraph(str(len(reach_5xx)),     S_cd),
-                    Paragraph(str(len(reach_other)),   S_cd),
-                    Paragraph(str(slow_count),         S_cd_red if slow_count > 0 else S_cd),
-                    Paragraph(avg_delay_ok,            S_cd),
+                    Paragraph(str(total_probes),        S_cd),
+                    Paragraph(str(len(reach_ok)),       S_cd),
+                    Paragraph(str(len(reach_rl)),       S_cd),
+                    Paragraph(str(len(reach_timeout)),  S_cd),
+                    Paragraph(str(len(reach_5xx)),      S_cd),
+                    Paragraph(str(len(reach_other)),    S_cd),
+                    Paragraph(str(slow_count),          S_cd_red if slow_count > 0 else S_cd),
+                    Paragraph(avg_delay_ok,             S_cd),
                 ],
             ],
             colWidths=[cw] * 8
@@ -1183,57 +1218,110 @@ def create_pdf_report(stats_file, history_file, output_file,
         story.append(Spacer(1, 16))
         story.append(PageBreak())
 
-    # ── REACHABILITY  (pie chart + timeline)  <-- UPRAVENÉ ────────
+    # ── REACHABILITY  (pie chart + timeline) ──────────────────────
     p_pie = os.path.join(REPORT_DIR, "chart_pie.png")
     story.append(ColorBand("  Reachability"))
     story.append(Spacer(1, 10))
 
-    # Použi reachability.csv ak dostupné, inak fallback na Locust stats
-    if reach_reachable is not None:
-        pie_reachable   = reach_reachable
-        pie_unreachable = reach_unreachable
-        pie_total       = reach_reachable + reach_unreachable
-        pie_source_note = (
-            f"Based on {pie_total} reachability probes "
-            f"({pie_reachable} reachable, {pie_unreachable} unreachable) — source: reachability.csv"
+    if reach_reachable is not None and reach_df is not None:
+        # Multi-category pie chart — matches delay chart categories exactly
+        from collections import Counter
+
+        def _classify_pie(code):
+            if 200 <= code < 300:
+                return "reachable"
+            elif code == 429:
+                return "rate_limited"
+            elif code == 0:
+                return "timeout"
+            elif 500 <= code < 600:
+                return "error_5xx"
+            else:
+                return "error_other"
+
+        counts = Counter(reach_df["status_code"].apply(_classify_pie))
+        pie_total = sum(counts.values())
+
+        mapping = {
+            "reachable":    ("Reachable (2xx)",       "#34A853"),
+            "rate_limited": ("Rate-limited (429)",    "#F9AB00"),
+            "timeout":      ("Timeout / No response", "#FF6D00"),
+            "error_5xx":    ("Server error (5xx)",    "#EA4335"),
+            "error_other":  ("Other error (4xx)",     "#9E9E9E"),
+        }
+
+        labels_pie, sizes_pie, colors_pie = [], [], []
+        for cat, (label, color) in mapping.items():
+            if counts.get(cat, 0) > 0:
+                labels_pie.append(f"{label}\n({counts[cat]})")
+                sizes_pie.append(counts[cat])
+                colors_pie.append(color)
+
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+        wedges, _, autotexts = ax.pie(
+            sizes_pie,
+            colors=colors_pie,
+            startangle=90,
+            autopct="%1.1f%%",
+            pctdistance=0.75,
+            wedgeprops={"edgecolor": "white", "linewidth": 2}
         )
+        for a in autotexts:
+            a.set_fontsize(8)
+            a.set_color("white")
+            a.set_fontweight("bold")
+        ax.legend(
+            wedges, labels_pie,
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.22),
+            ncol=3,
+            fontsize=7.5,
+            framealpha=0.9,
+            frameon=True,
+            edgecolor="#DADCE0",
+        )
+        ax.set_title("Reachability Overview", fontsize=11,
+                     fontweight="bold", color="#202124")
+        fig.patch.set_facecolor("white")
+        plt.subplots_adjust(bottom=0.22)
+        save_chart(p_pie, dpi=220)
+        story.append(Image(p_pie, width=320, height=280))
+        story.append(Spacer(1, 4))
     else:
+        # Fallback — no reachability.csv, use Locust stats (2 categories only)
         pie_reachable   = success
         pie_unreachable = fail_count
         pie_total       = req_count
-        pie_source_note = (
-            "reachability.csv not found — fallback to Locust request statistics "
-            f"({pie_reachable} success, {pie_unreachable} failures)"
+        sizes_pie  = [pie_reachable, pie_unreachable] if pie_total > 0 else [1, 0]
+        labels_pie = ["Reachable", "Unreachable"]
+        colors_pie = ["#34A853", "#EA4335"]
+
+        fig, ax = plt.subplots(figsize=(5, 3.5))
+        wedges, _, autotexts = ax.pie(
+            sizes_pie, colors=colors_pie, startangle=90,
+            autopct="%1.1f%%", pctdistance=0.75,
+            wedgeprops={"edgecolor": "white", "linewidth": 2}
         )
+        for i, a in enumerate(autotexts):
+            a.set_fontsize(9)
+            a.set_text(f"{labels_pie[i]}\n{a.get_text()}")
+            a.set_color("white")
+            a.set_fontweight("bold")
+        ax.set_title("Reachable vs Unreachable", fontsize=11,
+                     fontweight="bold", color="#202124")
+        fig.patch.set_facecolor("white")
+        save_chart(p_pie, dpi=220)
+        story.append(Image(p_pie, width=320, height=260))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph(
+            "reachability.csv not found — fallback to Locust request statistics "
+            f"({pie_reachable} success, {pie_unreachable} failures)",
+            ParagraphStyle("src_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
+        ))
 
-    sizes  = [pie_reachable, pie_unreachable] if pie_total > 0 else [1, 0]
-    labels = ["Reachable", "Unreachable"]
-    cmap   = ["#34A853", "#EA4335"]
-
-    fig, ax = plt.subplots(figsize=(5, 3.5))
-    wedges, _, autotexts = ax.pie(
-        sizes, colors=cmap, startangle=90,
-        autopct='%1.1f%%', pctdistance=0.75,
-        wedgeprops={"edgecolor": "white", "linewidth": 2}
-    )
-    for i, a in enumerate(autotexts):
-        a.set_fontsize(9)
-        a.set_text(f"{labels[i]}\n{a.get_text()}")
-        a.set_color("white")
-        a.set_fontweight("bold")
-    ax.set_title("Reachable vs Unreachable", fontsize=11,
-                 fontweight="bold", color="#202124")
-    fig.patch.set_facecolor("white")
-    save_chart(p_pie, dpi=220)
-    story.append(Image(p_pie, width=380, height=300))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(
-        pie_source_note,
-        ParagraphStyle("src_note", fontSize=8, textColor=C_TEXT_MUTED, alignment=TA_CENTER)
-    ))
     story.append(Spacer(1, 10))
 
-    # Timeline a delay graf sond (len ak máme reachability.csv)
+    # Timeline and delay chart (only if reachability.csv available)
     if reach_df is not None:
         add_reachability_delay_chart(reach_df, story, reach_timeout_s=reach_timeout)
 
