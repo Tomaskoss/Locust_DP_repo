@@ -115,12 +115,41 @@ if not hasattr(urllib3_conn, "_source_patch_applied"):
     urllib3_conn._source_patch_applied       = True
     urllib3_conn._original_create_connection = urllib3_conn.create_connection
     urllib3_conn.create_connection           = _source_bound_create_connection
+    
+def load_endpoint_paths():
+    raw = os.getenv("ENDPOINT_PATH", "/").strip()
+
+    if not raw:
+        return ["/"]
+
+    endpoints = []
+    for endpoint in raw.split(","):
+        endpoint = endpoint.strip()
+        if not endpoint:
+            continue
+
+        if not endpoint.startswith("/"):
+            endpoint = "/" + endpoint
+
+        endpoints.append(endpoint)
+
+    return endpoints or ["/"]
 
 
 # ============================================================
 #  HELPER FUNCTIONS
 # ============================================================
+def load_request_body():
+    raw = os.getenv("REQUEST_BODY", "").strip()
 
+    if not raw:
+        return None
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"WARNING: Invalid REQUEST_BODY JSON, POST will be sent without JSON body: {e}")
+        return None
 def is_ipv6(ip):
     try:
         socket.inet_pton(socket.AF_INET6, ip)
@@ -378,9 +407,12 @@ class DynamicShape(LoadTestShape):
 # ============================================================
 
 class MyUser(HttpUser):
-    _ip_pool   = None
-    _port_pool = None
-    _pool_lock = threading.Lock()
+    _ip_pool        = None
+    _port_pool      = None
+    _endpoint_paths = None
+    _request_body = None
+    _http_method = None
+    _pool_lock      = threading.Lock()
 
     def wait_time(self):
         if _worker_stages and _worker_test_start is not None:
@@ -414,12 +446,37 @@ class MyUser(HttpUser):
                     cls._port_pool = load_port_pool() or []
         return cls._port_pool
 
+    @classmethod
+    def get_endpoint_paths(cls):
+        if cls._endpoint_paths is None:
+            with cls._pool_lock:
+                if cls._endpoint_paths is None:
+                    cls._endpoint_paths = load_endpoint_paths()
+                    print(f"Loaded {len(cls._endpoint_paths)} endpoint path(s): {cls._endpoint_paths}")
+        return cls._endpoint_paths
+    @classmethod
+    def get_http_method(cls):
+        if cls._http_method is None:
+            method = os.getenv("HTTP_METHOD", "GET").strip().upper()
+            if method not in ("GET", "POST"):
+                print(f"WARNING: Unsupported HTTP_METHOD '{method}', using GET")
+                method = "GET"
+            cls._http_method = method
+        return cls._http_method
+
+    @classmethod
+    def get_request_body(cls):
+        if cls._request_body is None:
+            with cls._pool_lock:
+                if cls._request_body is None:
+                    cls._request_body = load_request_body()
+        return cls._request_body
+
     def on_start(self):
         ip_pool          = self.get_ip_pool()
         self.source_ip   = random.choice(ip_pool)
         port_pool        = self.get_port_pool()
         self.source_port = random.choice(port_pool) if port_pool else 0
-        self._logged_port = False
 
         self.adapter = SourceIPAdapter(self.source_ip, self.source_port)
         self.client.mount("http://",  self.adapter)
@@ -436,17 +493,39 @@ class MyUser(HttpUser):
 
     @task
     def index(self):
-        with self.client.get("/", catch_response=True) as resp:
-            if not self._logged_port:
-                actual_port = self.adapter.source_port or "OS ephemeral"
-                print(
-                    f"User started → IP: {self.source_ip} "
-                    f"({'IPv6' if is_ipv6(self.source_ip) else 'IPv4'})  "
-                    f"Port: {actual_port}"
-                )
-                self._logged_port = True
+        endpoint = random.choice(self.get_endpoint_paths())
+        method = self.get_http_method()
+
+        request_kwargs = {
+            "catch_response": True,
+            "timeout": (CONNECT_TIMEOUT, READ_TIMEOUT),
+            "name": f"{method} {endpoint}",
+        }
+
+        if method == "POST":
+            body = self.get_request_body()
+            if body is not None:
+                request_kwargs["json"] = body
+
+            response_ctx = self.client.post(endpoint, **request_kwargs)
+        else:
+            response_ctx = self.client.get(endpoint, **request_kwargs)
+
+        with response_ctx as resp:
+
+            # Debug log for checking which source IP and port were assigned to a user.
+            # Warning: enabling this for thousands of users can spam the GUI log.
+            # if not self._logged_port:
+            #     actual_port = self.adapter.source_port or "OS ephemeral"
+            #     print(
+            #         f"User started → IP: {self.source_ip} "
+            #         f"({'IPv6' if is_ipv6(self.source_ip) else 'IPv4'})  "
+            #         f"Port: {actual_port}"
+            #     )
+            #     self._logged_port = True
 
             code = resp.status_code
+
             if code in (200, 201, 301, 302, 303, 307, 308):
                 resp.success()
             elif code == 429:
@@ -459,6 +538,8 @@ class MyUser(HttpUser):
                 resp.failure(f"Server error {code}")
             elif code == 0:
                 error_cls = type(resp.error).__name__ if resp.error else "Unknown"
-                cause     = str(getattr(resp.error, "args", ["?"])[0])[:120]
+                cause = str(getattr(resp.error, "args", ["?"])[0])[:120]
                 resp.failure(f"[{error_cls}] IP:{self.source_ip} → {cause}")
+            else:
+                resp.failure(f"Unexpected status code {code}")
 
