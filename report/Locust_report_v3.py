@@ -1151,6 +1151,11 @@ def create_pdf_report(stats_file, history_file, output_file,
         used_ips = "Unknown"
 
     ip_version = "IPv6" if (source_ip and ":" in source_ip) else "IPv4"
+    http_method = os.getenv("HTTP_METHOD", "GET").strip().upper()
+    endpoint_path = os.getenv("ENDPOINT_PATH", "/").strip()
+
+    if not endpoint_path:
+        endpoint_path = "/"
 
     topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
     generate_topology_diagram(
@@ -1208,7 +1213,9 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(Spacer(1, 8))
     story.append(make_info_table([
         [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
+        [Paragraph("HTTP Method",       S["label"]), Paragraph(str(http_method),               S["value"])],
         [Paragraph("Target Host",       S["label"]), Paragraph(str(target_host),               S["value"])],
+        [Paragraph("Endpoint(s)",       S["label"]), Paragraph(str(endpoint_path), S["value"])],
         [Paragraph("Target IP",         S["label"]), Paragraph(str(resolved_target_ip),        S["value"])],
         [Paragraph("IP Version",        S["label"]), Paragraph(ip_version,                     S["value"])],
         [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],

@@ -2111,11 +2111,11 @@ class LocustGUI(ctk.CTk):
         else:
             self._request_body_frame.grid_remove()
 
-        def get_comment(self):
-            text = self.comment_text.get("0.0", "end").strip()
-            if text == "Write a comment for the report...":
-                return ""
-            return text
+    def get_comment(self):
+        text = self.comment_text.get("0.0", "end").strip()
+        if text == "Write a comment for the report...":
+            return ""
+        return text
 
     def _save_port_pool(self):
         port_str  = self.get("src_ports")
