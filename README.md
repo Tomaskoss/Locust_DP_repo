@@ -1,16 +1,16 @@
 # 🦗 Locust Load Test GUI
 
-> **Profesionálne grafické rozhranie pre automatizované záťažové testovanie HTTP/HTTPS**  
-> Postavené na Pythone, CustomTkinter a Locust frameworku – celý workflow záťažového testovania v jedinom okne.
+> **Grafické rozhranie pre automatizované záťažové testovanie HTTP/HTTPS**  
+> Postavené na Pythone, CustomTkinter a Locust frameworku – konfigurácia testu, monitoring a PDF report v jednom nástroji.
 
 <br>
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Linux-FCC624?logo=linux&logoColor=black)
-![Locust](https://img.shields.io/badge/Locust-latest-00AA00?logo=locust&logoColor=white)
+![Locust](https://img.shields.io/badge/Locust-load%20testing-00AA00)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-9B59B6)
-![License](https://img.shields.io/badge/License-MIT-2ECC71)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen)
+![Status](https://img.shields.io/badge/Status-Prototype-orange)
+![License](https://img.shields.io/badge/License-Academic-lightgrey)
 
 ---
 
@@ -24,32 +24,33 @@
 - [Konfigurácia](#️-konfigurácia)
 - [Používanie](#️-používanie)
   - [Config – nastavenia](#️-config--nastavenia)
-  - [HTTP – spustenie testu](#-http--spustenie-testu)
-  - [Playwright – replay relácie](#-playwright--replay-relácie)
+  - [HTTP/S – spustenie testu](#-https--spustenie-testu)
   - [Generate Report – generovanie PDF](#-generate-report--generovanie-pdf)
   - [Reports – správa reportov](#-reports--správa-reportov)
 - [Stage Presets](#-stage-presets)
 - [Sieťové moduly](#-sieťové-moduly)
 - [PDF Report](#-pdf-report)
 - [Digitálne podpisovanie](#-digitálne-podpisovanie)
-- [Farebné témy](#-farebné-témy)
 - [Klávesové skratky](#️-klávesové-skratky)
-- [Rozšírenie a customizácia](#-rozšírenie-a-customizácia)
+- [Riešenie problémov](#-riešenie-problémov)
 - [Licencia](#-licencia)
+- [Autor](#-autor)
 
 ---
 
 ## 🔍 O projekte
 
-**Locust Load Test GUI** je desktopová aplikácia pre Linux, ktorá zjednocuje celý pracovný postup záťažového testovania do jedného okna. Projekt vznikol ako diplomová práca a rieši problém fragmentovanosti nástrojov – typicky musíte kombinovať viacero CLI nástrojov, manuálne spravovať IP adresy, sledovať sieť a následne ručne spracovávať výsledky. Táto aplikácia to celé automatizuje.
+**Locust Load Test GUI** je desktopová aplikácia pre Linux, ktorá zjednocuje pracovný postup záťažového testovania do jedného grafického rozhrania. Projekt rieši potrebu jednoducho nastaviť záťažový test, spravovať zdrojové IP adresy, sledovať dostupnosť cieľa, monitorovať sieťovú prevádzku a vytvoriť prehľadný PDF report.
 
-**Workflow v 4 krokoch:**
+Aplikácia je navrhnutá najmä pre testovanie webových služieb v lokálnej sieti, kde môže jeden stroj slúžiť ako tester a druhý ako testovaný server.
 
-```
+**Základný workflow:**
+
+```text
 1. CONFIGURE   →   2. TEST   →   3. MONITOR   →   4. REPORT
-  IP Pool            Locust        Reachability      PDF + grafy
-  Rozhranie          Playwright    Network RX/TX     Digitálny podpis
-  Parametre          Stage preset  Real-time log     Topológia siete
+   IP Pool          Locust        Reachability      PDF + grafy
+   Interface        HTTP/S        Network RX/TX     Topológia siete
+   Parametre        Stages        Live log          Výsledky testu
 ```
 
 ---
@@ -58,63 +59,61 @@
 
 | Kategória | Funkcia | Popis |
 |---|---|---|
-| 🌐 **Sieť** | IPv4 + IPv6 podpora | Rozsahy aj prefixy (`fd00::/64`) |
-| 🌐 **Sieť** | IP Pool management | Automatické pridávanie/odstraňovanie IP adries na rozhranie cez `ip addr` |
-| 🌐 **Sieť** | Network Monitor | Sledovanie RX/TX rýchlosti v reálnom čase z `/proc/net/dev` |
-| 🌐 **Sieť** | Reachability Monitor | Meranie dostupnosti cieľa z konkrétnej zdrojovej IP počas testu |
-| 🗺️ **Vizualizácia** | Topology Diagram | Auto-generovaný PNG diagram siete (Matplotlib) |
-| 📊 **Reporting** | PDF Export | Profesionálny report s grafmi, tabuľkami a metadátami (ReportLab) |
-| 🔏 **Bezpečnosť** | PDF Signing | Digitálne podpisovanie reportu cez PKCS#12 certifikát (pyHanko, LTV) |
-| ⚡ **Záťaž** | Stage Presets | 5 zabudovaných profilov záťaže (Flat, Stress, Spike, Endurance, Capacity) |
-| 🎭 **Playwright** | Session Replay | Záznam a replay reálnych browserových relácií ako záťažový test |
-| 🎨 **UI** | 5 farebných tém | Locust Dark, Navy Blue, Discord Light, Discord Darkest, Netflix |
-| 🔍 **UI** | Zoom | Škálovanie celého GUI od 50% do 200% (Ctrl+/Ctrl-) |
-| ⚙️ **Konfigurácia** | Persistent config | Nastavenia sa automaticky ukladajú do `config.env` |
-| 🖥️ **Monitoring** | Real-time log | Live výstup z Locust procesu a všetkých vlákien v jedinom paneli |
+| 🌐 **Sieť** | IPv4 + IPv6 podpora | Podpora rozsahov aj IPv6 prefix módu |
+| 🌐 **Sieť** | IP Pool management | Pridávanie a odstraňovanie source IP adries na sieťové rozhranie |
+| 🌐 **Sieť** | Source ports | Vlastný rozsah portov alebo systémové ephemeral porty |
+| 🌐 **Sieť** | Network Monitor | Sledovanie RX/TX prevádzky počas testu |
+| 🌐 **Sieť** | Reachability Monitor | Priebežné overovanie dostupnosti cieľového servera |
+| 🗺️ **Vizualizácia** | Topology Diagram | Automaticky generovaný diagram testovacej topológie |
+| 📊 **Reporting** | PDF Export | Report s tabuľkami, grafmi, metadátami a komentárom |
+| 🔏 **Bezpečnosť** | PDF Signing | Voliteľné digitálne podpísanie reportu cez PKCS#12 certifikát |
+| ⚡ **Záťaž** | Stage Presets | Preddefinované testovacie scenáre: Flat, Stress, Spike, Endurance, Capacity |
+| ⚙️ **Konfigurácia** | Persistent config | Nastavenia sa ukladajú do `config.env` |
+| 🖥️ **Monitoring** | Real-time log | Live výstup z testu a monitorovacích vlákien v GUI |
 
 ---
 
 ## 📁 Štruktúra projektu
 
-```
+```text
 Locust_DP_repo/
 │
-├── locust_gui.py                    # Hlavný súbor – GUI aplikácia (CustomTkinter)
-├── prepare_tester_python.sh         # Automatický inštalačný skript prostredia
-├── config.env                       # Konfiguračný súbor (auto-generovaný pri prvom spustení)
-├── ip_pool.txt                      # Aktívny zoznam IP adries na rozhraní (auto)
-├── port_pool.txt                    # Zoznam zdrojových portov (auto)
-├── test_config.csv                  # Konfigurácia posledného testu (auto)
-├── stages.json                      # Konfigurácia fáz pre DynamicShape (auto)
-├── session.json                     # Záznam Playwright relácie (generovaný recorderom)
+├── locust_gui.py                    # Hlavný súbor GUI aplikácie
+├── prepare_tester_python.sh         # Inštalačný skript pre tester
+├── config.env                       # Konfiguračný súbor
+├── requirements.txt                 # Python závislosti
+├── ip_pool.txt                      # Aktívny IP pool, generovaný súbor
+├── port_pool.txt                    # Aktívny port pool, generovaný súbor
+├── test_config.csv                  # Snapshot konfigurácie posledného testu
+├── stages.json                      # Konfigurácia fáz testu
 │
-├── data/                            # Výstupné dáta z testov (auto-vytvorený)
-│   ├── report_stats.csv             # Štatistiky Locust (endpointy, percentily)
-│   ├── report_stats_history.csv     # Historický priebeh záťaže
-│   ├── reachability.csv             # Výsledky reachability monitoringu
-│   ├── network_usage.csv            # Sieťová prevádzka (RX/TX v kB/s)
-│   ├── report_failures.csv          # Detailné záznamy o zlyhaných requestoch
-│   └── report_metadata.csv          # Metadáta testu (čas, cieľ, IP, rozhranie)
+├── data/                            # Výstupné dáta z testov
+│   ├── report_stats.csv
+│   ├── report_stats_history.csv
+│   ├── report_failures.csv
+│   ├── reachability.csv
+│   ├── network_usage.csv
+│   └── report_metadata.csv
 │
-├── IP_pool/                         # Uložené a pomenované IP pool súbory
+├── IP_pool/                         # Uložené IP pool súbory
 │
-├── report/                          # PDF reporty, certifikáty a report modul
-│   ├── Locust_report_v3.py          # Generátor PDF reportu (ReportLab)
-│   ├── cert.p12                     # Certifikát pre podpisovanie (voliteľné)
-│   └── topology_diagram.png         # Diagram topológie siete (auto-generovaný)
+├── report/                          # PDF reporty a reportovací modul
+│   ├── Locust_report_v3.py
+│   └── Locust_Report.pdf
 │
 ├── network/                         # Sieťové moduly
-│   ├── Create_IP_Pool_skript.py     # Pridávanie IPv4/IPv6 adries na rozhranie
-│   ├── Remove_IP_Pool_skript.py     # Odstraňovanie IP adries
-│   ├── Network_monitor.py           # Thread-based monitor RX/TX prevádzky
-│   ├── Reachability.py              # Reachability monitoring cez HTTP
-│   ├── Create_topology.py           # Generovanie topologického diagramu
-│   └── playwright_recorder.py       # Nahrávanie browserovej relácie
+│   ├── Create_IP_Pool_skript.py
+│   ├── Remove_IP_Pool_skript.py
+│   ├── Network_monitor.py
+│   ├── Reachability.py
+│   └── Create_topology.py
 │
 └── locust_tests/                    # Locust testovacie súbory
-    ├── Locustfile_http.py           # HTTP záťažový test s IP/port binding
-    └── locustfile_playwright.py     # Replay Playwright relácie ako Locust test
+    ├── Locustfile_http.py
+    └── locustfile_playwright.py
 ```
+
+Niektoré súbory vznikajú automaticky až počas používania aplikácie.
 
 ---
 
@@ -122,18 +121,17 @@ Locust_DP_repo/
 
 ### Systémové požiadavky
 
-| Požiadavka | Minimálna verzia | Poznámka |
+| Požiadavka | Odporúčanie | Poznámka |
 |---|---|---|
-| **OS** | Linux (Ubuntu 20.04+) | Debian, Fedora a ďalšie distribúcie tiež fungujú |
-| **Python** | 3.8+ | Vrátane `python3-tk` pre GUI |
-| **iproute2** | aktuálna | Nutné pre `sudo ip addr add/del` |
-| **xdg-utils** | aktuálna | Pre otváranie PDF v systémovom prehliadači |
+| **OS** | Linux / Ubuntu | Sieťové operácie sú naviazané na Linux |
+| **Python** | 3.10+ | Odporúčané použiť virtuálne prostredie |
+| **Sieťové rozhranie** | `ens33`, `eth0`, `wlan0`, ... | Musí byť dostupné v systéme |
+| **Oprávnenia** | sudo | Potrebné pri pridávaní/odoberaní IP adries |
+| **Testovaný server** | HTTP/S server | Server musí byť dostupný z testera |
 
-> ⚠️ **Aplikácia nie je kompatibilná s Windows ani macOS.** Sieťové operácie využívajú Linux-špecifické rozhrania (`/proc/net/dev`, `ip addr`).
+### Hlavné Python závislosti
 
-### Python závislosti
-
-```
+```text
 locust
 customtkinter
 CTkToolTip
@@ -142,254 +140,304 @@ pandas
 matplotlib
 reportlab
 python-dotenv
-pyhanko[full]
-pyhanko-certvalidator
+pyhanko
 ```
 
 ---
 
 ## 🚀 Inštalácia
 
-### Možnosť A – Automatická inštalácia (odporúčané)
-
-Projekt obsahuje kompletný inštalačný skript, ktorý nastaví celé prostredie vrátane virtuálneho prostredia, systémových balíkov a defaultného `config.env`:
+### Automatická inštalácia
 
 ```bash
-# 1. Klonovanie repozitára
 git clone https://github.com/your_username/Locust_DP_repo.git
 cd Locust_DP_repo
 
-# 2. Spustenie inštalačného skriptu
 chmod +x prepare_tester_python.sh
 ./prepare_tester_python.sh
+```
 
-# 3. Aktivácia prostredia a spustenie
+Skript vykoná najmä:
+
+- inštaláciu potrebných systémových balíkov,
+- vytvorenie virtuálneho prostredia `locust_env`,
+- inštaláciu Python závislostí,
+- vytvorenie základných priečinkov projektu,
+- vytvorenie predvoleného `config.env`, ak ešte neexistuje.
+
+### Spustenie po inštalácii
+
+```bash
 source locust_env/bin/activate
 python3 locust_gui.py
 ```
-
-Skript automaticky:
-- Nainštaluje systémové balíky (`python3-tk`, `iproute2`, `xdg-utils`, sieťové nástroje)
-- Vytvorí Python virtuálne prostredie `locust_env/`
-- Nainštaluje všetky Python závislosti
-- Vytvorí adresárovú štruktúru (`data/`, `report/`, `IP_pool/`)
-- Vygeneruje defaultný `config.env`
-
-### Možnosť B – Manuálna inštalácia
-
-```bash
-# Systémové závislosti
-sudo apt-get install python3 python3-pip python3-venv python3-tk iproute2 xdg-utils
-
-# Klonovanie
-git clone https://github.com/your_username/Locust_DP_repo.git
-cd Locust_DP_repo
-
-# Python závisosti
-pip install locust customtkinter CTkToolTip requests pandas matplotlib \
-            reportlab python-dotenv "pyhanko[full]" pyhanko-certvalidator
-
-# Spustenie
-python3 locust_gui.py
-```
-
-> ⚠️ Operácie s IP adresami (`Setup` / `Cleanup`) vyžadujú `sudo` práva, ktoré sa využívajú interne cez `subprocess`.
 
 ---
 
 ## ⚙️ Konfigurácia
 
-Konfigurácia sa ukladá do súboru `config.env` a automaticky sa načítava pri každom štarte aplikácie. Zmeny cez GUI sa do súboru zapisujú okamžite.
+Konfigurácia sa ukladá do súboru `config.env`. Hodnoty z GUI sa do tohto súboru ukladajú automaticky.
 
-### Úplný zoznam parametrov `config.env`
+Príklad konfigurácie:
 
 ```env
-# ── Locust ─────────────────────────────────────────
-TARGET_HOST=https://google.sk         # URL testovaného servera
-TEST_TYPE=Load Test                   # Typ testu (informačný popis)
-PROCESSES=-1                          # Počet Locust procesov (-1 = auto)
-STOP_TIMEOUT=30                       # Timeout pri zastavení (s)
-CONNECT_TIMEOUT=5                     # TCP connection timeout (s)
-READ_TIMEOUT=15                       # HTTP read timeout (s)
+TARGET_HOST='http://[fd00:100::73]:8080'
+PROCESSES='-1'
+TEST_TYPE='Load Test'
+STOP_TIMEOUT='30'
+CONNECT_TIMEOUT='3'
+READ_TIMEOUT='10'
 
-# ── HTTP Request ────────────────────────────────────
-HTTP_METHOD=GET                       # GET | POST | PUT | DELETE | PATCH
-ENDPOINT_PATH=/                       # Testovaná cesta
-REQUEST_BODY={}                       # JSON telo pre POST/PUT
-SSL_VERIFY=true                       # Verifikácia SSL certifikátu
-REQUEST_FAILURE_THRESHOLD=1           # Počet zlyhaní pred označením za chybu
+HTTP_METHOD='GET'
+ENDPOINT_PATH='/,/health,/api/status,/api/products'
+REQUEST_BODY='{"message": "hello", "user": "test"}'
+SSL_VERIFY='false'
+REQUEST_FAILURE_THRESHOLD='1'
 
-# ── Sieť / IP Pool ──────────────────────────────────
-INTERFACE=ens33                       # Sieťové rozhranie
-IP_VERSION=ipv4                       # ipv4 | ipv6
+INTERFACE='ens33'
+IP_VERSION='ipv6'
 
-# IPv4
-IP_START=192.168.100.100              # Začiatok rozsahu
-IP_END=192.168.100.120                # Koniec rozsahu
-IPV4PREFIX=32                         # Prefix masky
+IP_START='192.168.10.10'
+IP_END='192.168.100.200'
+IPV4PREFIX='28'
 
-# IPv6
-IP6_START=fd00:100::1000              # Začiatok rozsahu
-IP6_END=fd00:100::1050                # Koniec rozsahu
-IP6_PREFIX=fd00:100::/64              # Prefix siete
-IPV6_MODE=range                       # range | prefix
-IPV6RPREFIX=64                        # Dĺžka prefixu
+IP6_START='fd00:100::1000'
+IP6_END='fd00:100::1050'
+IP6_PREFIX='fd00:100::/64'
+IPV6_MODE='range'
+IPV6RPREFIX='64'
 
-# ── Reachability ────────────────────────────────────
-REACH_INTERVAL=5                      # Frekvencia merania (s)
-REACH_TIMEOUT=5                       # HTTP timeout pre meranie (s)
-REACH_SRC_IP=                         # Zdrojová IP (default = IP_START)
-REACH_INTERFACE=ens33                 # Rozhranie pre meranie
-REACH_THRESHOLD=50                    # Prah zlyhania pre report (%)
-
-# ── Stage Presets ───────────────────────────────────
-STAGES=[{"duration":60,"users":10,"spawn_rate":5,...}]
+REACH_INTERVAL='5'
+REACH_TIMEOUT='5'
+REACH_SRC_IP='fd00:100::1000'
+REACH_INTERFACE='ens33'
+REACH_THRESHOLD='5'
 ```
 
 ---
 
 ## 🖥️ Používanie
 
-Po spustení `python3 locust_gui.py` sa otvorí hlavné okno s navigáciou na ľavej strane.
+Po spustení aplikácie sa zobrazí GUI so štyrmi hlavnými časťami:
+
+```text
+Config
+HTTP/S
+Generate Report
+Reports
+```
+
+---
 
 ### ⚙️ Config – nastavenia
 
-Prvá karta pre konfiguráciu všetkých parametrov testovania.
+V tejto časti sa nastavuje cieľový server, endpointy, IP pool, source porty, reachability monitoring a sieťový monitoring.
 
-**General**
+#### General
 
 | Parameter | Popis | Príklad |
 |---|---|---|
-| Target host | URL testovaného servera | `https://api.example.com` |
-| Interface | Sieťové rozhranie | `ens33`, `eth0`, `enp3s0` |
-| Test type | Popis typu testu (do reportu) | `Load Test`, `Stress Test` |
-| Source ports | Rozsah alebo zoznam portov | `1024-65535` alebo `8000,8001` |
+| Target host | URL testovaného servera | `http://[fd00:100::73]:8080` |
+| Endpoint path | Jeden alebo viac endpointov | `/,/health,/api/status` |
+| Interface | Hlavné sieťové rozhranie | `ens33` |
+| Test type | Popis testu do reportu | `Load Test` |
+| Source ports | Voliteľný port alebo rozsah portov | `1024-2000` |
+| Request failure threshold | Povolené percento request failures | `1` |
 
-**IP Pool – IPv4 / IPv6**
+Endpointy je možné zadať ako zoznam oddelený čiarkou:
 
-Aplikácia podporuje dva módy IPv6: **Range** (konkrétne adresy `fd00::10` – `fd00::40`) a **Prefix** (automatické generovanie z prefixu `fd00::/64`).
+```text
+/,/health,/api/status,/api/products
+```
 
-**Reachability**
+Ak endpoint nemá úvodnú lomku, aplikácia ju automaticky doplní.
 
-| Parameter | Default | Popis |
-|---|---|---|
-| Interval (s) | 5 | Ako často sa meria dostupnosť |
-| Timeout (s) | 5 | Max čakanie na HTTP odpoveď |
-| Source IP | = IP_START | Z akej IP sa meria |
-| Failure threshold (%) | 50 | Nad túto hodnotu = varovaniev reporte |
+#### IP Pool
 
-**Actions**
+Podporované režimy:
 
-- **⚙ Setup** – pridá IP adresy na rozhranie (`sudo ip addr add`) a vygeneruje topologický diagram
-- **🗑 Cleanup** – odstráni všetky pridané IP adresy (`sudo ip addr del`)
+```text
+IPv4 range
+IPv6 range
+IPv6 prefix
+Custom pool file
+```
+
+Príklad IPv6 rozsahu:
+
+```text
+fd00:100::1000 – fd00:100::1050
+```
+
+Odporúčanie:
+
+```text
+Server:      fd00:100::73
+Tester pool: fd00:100::1000 – fd00:100::1050
+```
+
+Tester by nemal používať rovnakú IP adresu ako server.
+
+#### Reachability
+
+| Parameter | Popis |
+|---|---|
+| Interval | Ako často sa overuje dostupnosť servera |
+| Timeout | Maximálny čas čakania na odpoveď |
+| Source IP | Zdrojová IP pre reachability požiadavky |
+| Interface | Rozhranie pre reachability monitoring |
+| Failure threshold | Povolené percento zlyhaných reachability kontrol |
+
+Reachability threshold sa vyhodnocuje oddelene od Locust request failure thresholdu.
+
+#### Actions
+
+| Tlačidlo | Popis |
+|---|---|
+| **Setup IP Pool** | Pridá IP adresy z poolu na sieťové rozhranie |
+| **Save Pool** | Uloží aktuálny IP pool do priečinka `IP_pool/` |
+| **Cleanup** | Odstráni IP adresy z rozhrania |
 
 ---
 
-### 🌐 HTTP – spustenie testu
+### 🌐 HTTP/S – spustenie testu
 
-Karta pre konfiguráciu Locust parametrov a spustenie záťažového testu.
+V tejto časti sa nastavuje testovací scenár, Locust parametre a HTTP metóda.
 
-**Locust parametre**
+#### Define Test
 
-| Parameter | Default | Popis |
-|---|---|---|
-| Users | 1 | Počet súbežných virtuálnych používateľov |
-| Run time (s) | 20 | Celková dĺžka testu |
-| Spawn rate | 1 | Počet nových používateľov za sekundu |
-| Processes | -1 | Počet Locust worker procesov (`-1` = podľa CPU) |
+Test je rozdelený do stages. Každá fáza obsahuje:
 
-**Locustfile** – cez tlačidlo **Browse** môžete vybrať vlastný `.py` Locustfile; bez výberu sa použije defaultný `locust_tests/Locustfile_http.py`.
-
-Kliknutím na **▶ Start Test** sa súčasne spustia:
-1. **Locust** – záťažový test
-2. **Reachability Monitor** – periodické meranie dostupnosti cieľa
-3. **Network Monitor** – sledovanie RX/TX prevádzky
-
-Výstup je viditeľný v live **Output Log** paneli. Test je možné kedykoľvek zastaviť tlačidlom **⛔ Stop Test**.
-
----
-
-### 🎭 Playwright – replay relácie
-
-Locust GUI podporuje aj replay reálnych browserových relácií namiesto syntetických HTTP requestov.
-
-**Krok 1: Nahratie relácie**
-
-```bash
-# Spustí Playwright recorder – otvorí browser, v ktorom nahráte reláciu
-python3 network/playwright_recorder.py
-# Výsledok sa uloží do session.json
+```text
+Duration (s)
+Users
+Spawn rate
+Wait mode
+Min
+Max
 ```
 
-**Krok 2: Konfigurácia v `config.env`**
+Hodnota `Duration (s)` znamená trvanie konkrétnej fázy, nie kumulatívny čas.
 
-```env
-SESSION_FILE=session.json         # cesta k nahranej relácii
-REPLAY_TYPES=document,xhr,fetch   # typy requestov na replay (alebo "all")
-TASK_MODE=sequential              # sequential | random
-THINK_TIME_MS=0                   # extra oneskorenie medzi requestmi (ms)
+Príklad:
+
+```text
+Stage 1: 60 s, 10 users
+Stage 2: 120 s, 50 users
+Stage 3: 120 s, 100 users
 ```
 
-**Krok 3: Spustenie testu**
+Celkové trvanie:
 
-Na karte **HTTP** vyberte `locust_tests/locustfile_playwright.py` cez **Browse** a spustite test štandardne.
+```text
+60 + 120 + 120 = 300 s
+```
+
+#### Wait mode
+
+| Režim | Význam |
+|---|---|
+| `between` | Náhodné čakanie medzi Min a Max |
+| `constant` | Fixné čakanie podľa hodnoty Min |
+| `constant_throughput` | Min sa používa ako cieľová priepustnosť na používateľa |
+
+#### Locust Parameters
+
+| Parameter | Popis |
+|---|---|
+| Stop timeout | Čas, ktorý Locust čaká na dokončenie bežiacich taskov |
+| Processes | Počet Locust procesov, `-1` znamená automaticky podľa CPU |
+| Connect timeout | Timeout pre nadviazanie TCP spojenia |
+| Read timeout | Timeout pre čakanie na odpoveď servera |
+
+#### Request Settings
+
+Podporované HTTP metódy:
+
+```text
+GET
+POST
+```
+
+Pri `GET` sa request body nepoužíva.  
+Pri `POST` je možné zadať JSON request body:
+
+```json
+{
+  "message": "hello",
+  "user": "test"
+}
+```
+
+Kliknutím na **Start Test** sa spustí:
+
+```text
+Locust test
+Reachability monitoring
+Network monitoring
+```
+
+Výstup je dostupný v paneli **Output Log**.
 
 ---
 
 ### 📄 Generate Report – generovanie PDF
 
-Po dokončení testu vygenerujte profesionálny PDF report.
+Po dokončení testu je možné vygenerovať PDF report.
 
-| Parameter | Default | Popis |
-|---|---|---|
-| Report name | `Locust_Report.pdf` | Názov výstupného súboru |
-| Save to | `report/` | Cieľový adresár |
-| Comment | — | Vlastný komentár testera (zobrazí sa v reporte) |
+| Parameter | Popis |
+|---|---|
+| Report name | Názov PDF súboru |
+| Save to | Cieľový priečinok |
+| Comment | Voliteľný komentár do reportu |
+| Include failure details table | Zobrazí detailnú tabuľku chýb |
+| Sign PDF | Voliteľné podpísanie reportu |
 
-Sekcia **PDF Signing** – zaškrtnutím **Sign PDF** aktivujete digitálne podpisovanie:
+PDF report obsahuje najmä:
 
+```text
+Test Information
+Performance Overview
+Test Stages
+Network Topology
+Reachability
+Time Series Charts
+Network Traffic Analysis
+Failure Details
 ```
-Certificate → vyberte .p12 / .pfx súbor
-Password    → heslo k privátneho kľúču
-```
 
-Kliknite **📄 Generate Report** – report sa automaticky otvorí po dokončení.
+Niektoré časti sa zobrazujú iba vtedy, keď majú význam.
 
 ---
 
 ### 📋 Reports – správa reportov
 
-Prehľad všetkých vygenerovaných PDF reportov v adresári `report/`.
+Táto časť slúži na prezeranie vygenerovaných PDF reportov.
 
-| Stĺpec | Popis |
+| Akcia | Popis |
 |---|---|
-| Report name | Názov PDF súboru |
-| Created | Dátum a čas vytvorenia |
-| Signed | ✅ Signed / ❌ No – stav digitálneho podpisu |
-
-Dostupné akcie: **Open** (otvoriť v systémovom prehliadači), **🗑** (zmazať), **⟳ Refresh** (obnoviť zoznam).
+| Open | Otvorí PDF report |
+| Delete | Odstráni PDF report |
+| Refresh | Obnoví zoznam reportov |
 
 ---
 
 ## 📐 Stage Presets
 
-Namiesto fixných parametrov je možné definovať viacfázový test cez **stage preset**. Preset vygeneruje `stages.json`, ktorý `Locustfile_http.py` načíta cez `LoadTestShape`.
+Aplikácia obsahuje preddefinované profily záťaže.
 
-| Preset | Popis | Trvanie |
-|---|---|---|
-| **Flat** | Konštantná záťaž – 50 používateľov | 5 min |
-| **Stress** | Stupňovanie: 10 → 50 → 100 → 300 používateľov | ~6 min |
-| **Spike** | Nárazová záťaž: skok na 500 a späť | ~90 s |
-| **Endurance** | Dlhodobý test: 25 používateľov | 2 hod |
-| **Capacity** | Stupňovanie throughputu: 10 → 200 používateľov | ~10 min |
+| Preset | Popis |
+|---|---|
+| **Flat** | Konštantná záťaž |
+| **Stress** | Postupné zvyšovanie záťaže |
+| **Spike** | Krátkodobý prudký nárast záťaže |
+| **Endurance** | Dlhodobý test stability |
+| **Capacity** | Postupné hľadanie kapacity systému |
 
-**Vlastný preset** môžete definovať priamo v GUI editore stages alebo úpravou `stages.json`:
+Stages sa ukladajú do súboru:
 
-```json
-[
-  {"duration": 60, "users": 10, "spawn_rate": 5, "wait_mode": "between", "wait_min": 1.0, "wait_max": 3.0},
-  {"duration": 120, "users": 100, "spawn_rate": 20, "wait_mode": "constant", "wait_min": 0.5, "wait_max": 0.5}
-]
+```text
+stages.json
 ```
 
 ---
@@ -398,131 +446,67 @@ Namiesto fixných parametrov je možné definovať viacfázový test cez **stage
 
 ### `Create_IP_Pool_skript.py`
 
-Pridáva rozsah IPv4 alebo IPv6 adries na sieťové rozhranie pomocou `sudo ip addr add`. Ukladá zoznam pridaných IP do `ip_pool.txt`.
-
-```python
-create_pool(
-    ip_start="192.168.10.10",
-    ip_end="192.168.10.40",
-    interface="ens33",
-    output_file="ip_pool.txt",
-    ip_version="ipv4"
-)
-```
+Pridáva IP adresy na sieťové rozhranie a zapisuje ich do `ip_pool.txt`.
 
 ### `Remove_IP_Pool_skript.py`
 
-Odstraňuje IP adresy z rozhrania pomocou `sudo ip addr del`. Číta zoznam z `ip_pool.txt` – bezpečné volanie aj pri čiastočne pridanom poole.
+Odstraňuje IP adresy z rozhrania podľa obsahu `ip_pool.txt`.
 
 ### `Network_monitor.py`
 
-Thread-based monitor sieťovej prevádzky čítajúci `/proc/net/dev`. Loguje RX/TX rýchlosť v kB/s do CSV každú sekundu (konfigurovateľné).
-
-```python
-monitor = NetworkMonitor(interface="ens33", interval=1, output_file="data/network_usage.csv")
-monitor.start()
-# ... prebieha test ...
-monitor.stop()
-```
+Monitoruje RX/TX prevádzku zo sieťového rozhrania a zapisuje výsledky do `data/network_usage.csv`.
 
 ### `Reachability.py`
 
-Periodicky meria HTTP dostupnosť cieľa z konkrétnej zdrojovej IP. Podporuje IPv6 link-local adresy s automatickým pridaním zóny (`fe80::1%ens33`). Výsledky (timestamp, status_code, elapsed_ms) ukladá do `data/reachability.csv`.
+Priebežne overuje dostupnosť cieľového servera a zapisuje výsledky do `data/reachability.csv`.
 
 ### `Create_topology.py`
 
-Generuje PNG diagram sieťovej topológie pomocou Matplotlib. Vizualizuje vzťah tester → zdrojové IP → cieľ s metadátami rozhrania a IP rozsahu.
-
-### `playwright_recorder.py`
-
-Spúšťa Playwright browser a zaznamenáva HTTP reláciu vrátane requestov, headerov a tela. Výstup je `session.json` pre replay cez `locustfile_playwright.py`.
+Generuje topologický diagram testovacieho prostredia.
 
 ---
 
 ## 📊 PDF Report
 
-Vygenerovaný report je profesionálny A4 PDF dokument s bielym pozadím a zeleným akcentom.
+PDF report je generovaný modulom:
 
-**Štruktúra reportu:**
+```text
+report/Locust_report_v3.py
+```
 
-| # | Sekcia | Obsah |
-|---|---|---|
-| 1 | **Titulná strana** | Názov testu, dátum, cieľ, zdrojové IP, rozhranie, typ testu |
-| 2 | **Test Summary** | Celkový počet requestov, failure rate, trvanie testu |
-| 3 | **Performance Statistics** | Tabuľka: min/avg/max/p50/p95/p99 response time, RPS, failures per endpoint |
-| 4 | **Response Time Graph** | Časový priebeh odozvy (percentily 50/95/99) |
-| 5 | **Requests per Second** | Priebeh throughputu počas testu |
-| 6 | **Reachability Graph** | Dostupnosť cieľa (pass/fail) počas testu |
-| 7 | **Network Traffic** | RX/TX prevádzka na sieťovom rozhraní |
-| 8 | **Network Topology** | Vizuálny diagram testovacieho prostredia |
-| 9 | **Komentár** | Vlastná poznámka testera |
-| 10 | **Digitálny podpis** | LTV podpis (ak bol aktivovaný) |
+Report využíva CSV súbory vytvorené počas testu:
+
+```text
+data/report_stats.csv
+data/report_stats_history.csv
+data/report_failures.csv
+data/network_usage.csv
+data/reachability.csv
+data/report_metadata.csv
+test_config.csv
+```
+
+Hodnoty použité v reporte sa viažu na snapshot konkrétneho testu, nie iba na aktuálny stav GUI.
 
 ---
 
 ## 🔏 Digitálne podpisovanie
 
-PDF reporty je možné digitálne podpísať pomocou PKCS#12 certifikátu (`.p12` / `.pfx`) cez knižnicu **pyHanko** s podporou LTV (Long-Term Validation).
+PDF report je možné podpísať certifikátom vo formáte:
 
-### Vytvorenie self-signed certifikátu (pre testovacie účely)
-
-```bash
-# 1. Vytvorenie privátneho kľúča a certifikátu
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
-  -subj "/CN=Locust Test Signer/O=Test Organization"
-
-# 2. Export do PKCS#12 formátu
-openssl pkcs12 -export -out report/cert.p12 -inkey key.pem -in cert.pem
-
-# 3. Vyčistenie dočasných súborov
-rm key.pem cert.pem
+```text
+.p12
+.pfx
 ```
 
-### Postup podpisovania v GUI
+V GUI je potrebné nastaviť:
 
-1. Na karte **Generate Report** zaškrtnite **Sign PDF**
-2. Vyberte `.p12` certifikát cez **Browse**
-3. Zadajte heslo certifikátu
-4. Kliknite **Generate Report**
-
-Podpísané reporty sú označené `✅ Signed` v zozname reportov.
-
----
-
-## 🎨 Farebné témy
-
-Aplikácia obsahuje 5 vstavaných farebných tém prepínateľných v dolnej časti sidebaru. Zmena témy reštartuje aplikáciu (nastavenia sa zachovajú).
-
-| Téma | Primárny akcentu | Pozadie | Charakter |
-|---|---|---|---|
-| **Locust Dark** | `#2a5f3a` tmavá zelená | `#111111` | Predvolená, minimalistická |
-| **Navy Blue** | `#23395B` tmavomodrá | `#1c2128` | Profesionálna, monochromatická |
-| **Discord Light** | `#7289da` fialová | `#36393e` | Discord-inšpirovaná |
-| **Discord Darkest** | `#5b73c7` tmavá fialová | `#1a1a1e` | Najtemnejší variant |
-| **Netflix** | `#800000` tmavá červená | `#181818` | Čierne pozadie, červený akcentu |
-
-### Pridanie vlastnej témy
-
-V `locust_gui.py` rozšírte slovník `THEMES`:
-
-```python
-THEMES["My Theme"] = {
-    "BG_SIDEBAR":   "#1a1a2e",
-    "BG_MAIN":      "#16213e",
-    "BG_CARD":      "#1f2b47",
-    "ACCENT":       "#ff6b35",
-    "ACCENT_HOVER": "#e55a2b",
-    "FG_TEXT":      "#ffffff",
-    "FG_MUTED":     "#888888",
-    "FG_LABEL":     "#cccccc",
-    "FG_HEADER":    "#ff6b35",
-    "BG_INPUT":     "#0d0e10",
-    "BTN_DANGER":   "#922b21",
-    "BTN_START":    "#ff6b35",
-    "BTN_REPORT":   "#ff6b35",
-    "BTN_SETUP":    "#ff6b35",
-}
+```text
+Certificate
+Password
 ```
+
+Certifikáty a súkromné kľúče sa nemajú ukladať do verejného repozitára.
 
 ---
 
@@ -530,94 +514,75 @@ THEMES["My Theme"] = {
 
 | Skratka | Funkcia |
 |---|---|
-| `Ctrl` + `+` / `=` | Priblíženie (zoom in) |
-| `Ctrl` + `-` | Oddialenie (zoom out) |
-| `Ctrl` + `0` | Reset zoomu na 100% |
-| `Scroll wheel` | Scrollovanie v zoznamoch a formulároch |
+| `Ctrl` + `+` / `=` | Priblíženie |
+| `Ctrl` + `-` | Oddialenie |
+| `Ctrl` + `0` | Reset zoomu |
 
 ---
 
-## 🔧 Rozšírenie a customizácia
+### IPv6 príklad
 
-### Vlastný Locustfile
+Nesprávne:
 
-Vytvorte `.py` súbor s Locust testom a vyberte ho cez **Browse** na karte HTTP:
-
-```python
-from locust import HttpUser, task, between
-
-class MyUser(HttpUser):
-    wait_time = between(1, 3)
-
-    @task(3)
-    def homepage(self):
-        self.client.get("/")
-
-    @task(1)
-    def api_endpoint(self):
-        self.client.post("/api/data", json={"key": "value"})
+```text
+Source IP: fd00::100
+Target:    fd00:100::73
 ```
 
-### Vlastný Playwright recorder
+Správne:
 
-```bash
-# Spustenie – otvorí Chromium browser
-python3 network/playwright_recorder.py
-
-# Nahrajte reláciu manuálnym klikaním v browseri
-# Po zatvorení sa uloží session.json
-
-# Konfigurácia replay
-echo "SESSION_FILE=session.json" >> config.env
-echo "TASK_MODE=sequential" >> config.env
+```text
+Source IP: fd00:100::1000
+Target:    fd00:100::73
 ```
 
-### Integrácia do CI/CD
+### Link-local IPv6 príklad
 
-```bash
-# Headless spustenie testu (bez GUI)
-cd Locust_DP_repo
-source locust_env/bin/activate
-
-# Priamy Locust príkaz s parametrami
-locust -f locust_tests/Locustfile_http.py \
-  --headless \
-  --users 50 \
-  --spawn-rate 10 \
-  --run-time 60s \
-  --host https://target.example.com \
-  --csv data/report
+```text
+http://[fe80::20c:29ff:fe7e:a4b0%25ens33]:8080
 ```
 
 ---
 
-## 🐛 Riešenie problémov
+## 🧹 Odporúčaný `.gitignore`
 
-| Problém | Príčina | Riešenie |
-|---|---|---|
-| `ModuleNotFoundError: customtkinter` | Závislosti nie sú nainštalované | Spustite `prepare_tester_python.sh` alebo `pip install customtkinter` |
-| `Permission denied` pri Setup | Chýbajú sudo práva | Overte, že váš user je v sudoers; app volá `sudo ip addr add` interne |
-| GUI sa nespustí (display error) | Nie je dostupný X display | Nastavte `DISPLAY=:0` alebo spustite cez SSH s `-X` flagom |
-| PDF sa negeneruje | Chýbajú dáta z testu | Uistite sa, že test prebehol a súbory v `data/` existujú |
-| `pyhanko` sign error | Nesprávne heslo alebo formát cert | Overte `.p12` certifikát: `openssl pkcs12 -info -in cert.p12` |
-| IPv6 adresy sa nepridajú | Kernel nepodporuje IPv6 | Skontrolujte: `cat /proc/sys/net/ipv6/conf/all/disable_ipv6` (musí byť `0`) |
+```gitignore
+__pycache__/
+*.pyc
+locust_env/
+
+data/*.csv
+report/*.pdf
+report/*.png
+
+ip_pool.txt
+port_pool.txt
+test_config.csv
+stages.json
+
+*.p12
+*.pfx
+
+.vscode/
+.idea/
+```
 
 ---
 
 ## 📝 Licencia
 
-Tento projekt je distribuovaný pod licenciou **MIT**. Pozri súbor `LICENSE` pre úplné podmienky.
+Projekt je určený na akademické a testovacie účely. Licenciu je možné upraviť podľa požiadaviek repozitára alebo školy.
 
 ---
 
 ## 👤 Autor
 
-Vytvorené v rámci **diplomovej práce**, 2026.
+Vytvorené ako prototyp nástroja na záťažové testovanie v rámci diplomovej práce.
 
 ---
 
 <div align="center">
 
-*🦗 Locust Load Test GUI – automatizuj, testuj, analyzuj.*
+*🦗 Locust Load Test GUI – konfiguruj, testuj, monitoruj, reportuj.*
 
 </div>
