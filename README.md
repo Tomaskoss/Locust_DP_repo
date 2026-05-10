@@ -1,128 +1,158 @@
 # Locust Load Test GUI
 
-A Python-based prototype for load testing web services with [Locust](https://locust.io/). The project provides a graphical interface for configuring HTTP/S load tests, generating IP pools, monitoring reachability and network traffic, and exporting PDF reports.
-
-The tool was designed for controlled testing in a local network, typically with one machine acting as the tester and another as the tested server.
-
----
-
-## Features
-
-- GUI-based configuration of Locust load tests
-- HTTP `GET` and `POST` support
-- Single or multiple endpoint testing
-- IPv4 and IPv6 source IP pool generation
-- Optional custom source port configuration
-- Multi-stage load scenarios
-- Reachability monitoring during the test
-- Network traffic monitoring
-- PDF report generation
-- Optional failure details table in the report
-- Optional PDF signing with a `.p12` certificate
+Projekt slúži na spúšťanie záťažových testov pomocou frameworku **Locust** cez jednoduché grafické rozhranie.  
+Aplikácia umožňuje nastaviť cieľový server, HTTP/S requesty, IP pool, reachability monitoring, sieťový monitoring a následne vygenerovať PDF report z výsledkov testu.
 
 ---
 
-## Recommended Test Topology
+## Hlavné funkcie
 
-Use two machines in the same local network:
+- spustenie Locust testu cez GUI,
+- podpora HTTP metód `GET` a `POST`,
+- možnosť testovať jeden alebo viac endpointov,
+- podpora IPv4 aj IPv6,
+- generovanie a správa source IP poolu,
+- možnosť použiť vlastné source porty alebo OS ephemeral porty,
+- viacfázový test pomocou stages,
+- reachability monitoring počas testu,
+- monitorovanie sieťovej prevádzky,
+- generovanie PDF reportu,
+- voliteľné zobrazenie detailov chýb v reporte,
+- voliteľné podpísanie PDF reportu.
+
+---
+
+## Odporúčaná topológia
+
+Odporúčané je použiť dva stroje v jednej lokálnej sieti:
 
 ```text
-Tester machine  -> runs this project and generates the load
-Server machine  -> runs the tested web application
+PC / VM       tester – spúšťa Locust GUI
+Notebook      server – prijíma HTTP/S požiadavky
 ```
 
-Example IPv6 setup:
+Príklad IPv6 konfigurácie:
 
 ```text
 Tester: fd00:100::72/64
 Server: fd00:100::73/64
-Target: http://[fd00:100::73]:8080
 ```
 
-When using IPv6, make sure the tester source IP pool is in the correct network and does not conflict with the server IP address.
+Príklad cieľovej URL:
+
+```text
+http://[fd00:100::73]:8080
+```
+
+Pri testovaní cez IPv6 je dôležité, aby source IP adresy testera patrili do rovnakej siete ako cieľový server.
 
 ---
 
-## Installation
+## Inštalácia na testeri
 
-Run the preparation script on the tester machine:
+Najskôr nastav práva pre prípravný skript:
 
 ```bash
 chmod +x prepare_tester_python.sh
+```
+
+Potom spusti prípravu prostredia:
+
+```bash
 ./prepare_tester_python.sh
 ```
 
-The script installs required system packages, creates the Python virtual environment `locust_env`, installs Python dependencies, and prepares the project directories.
+Skript nainštaluje potrebné systémové balíky, vytvorí virtuálne prostredie `locust_env` a nainštaluje Python knižnice potrebné pre beh projektu.
 
-If the virtual environment already exists, activate it manually:
+---
+
+## Spustenie aplikácie
+
+Aktivuj virtuálne prostredie:
 
 ```bash
 source locust_env/bin/activate
 ```
 
----
-
-## Running the GUI
+Spusti GUI:
 
 ```bash
-source locust_env/bin/activate
 python3 locust_gui.py
 ```
 
 ---
 
-## Basic Workflow
+## Základný postup použitia
 
-1. Open the **Config** tab.
-2. Set the target host, endpoint path, network interface, IP version, and IP pool.
-3. Click **Setup IP Pool** to add source IP addresses to the selected interface.
-4. Open the **HTTP/S** tab.
-5. Configure stages, Locust parameters, HTTP method, and optional request body.
-6. Click **Start Test**.
-7. After the test finishes, open **Generate Report**.
-8. Generate the PDF report.
-9. Use **Cleanup** after testing to remove the generated IP addresses from the interface.
+1. V časti **Config** nastav cieľový server, endpointy, interface a IP pool.
+2. Klikni na **Setup IP Pool**.
+3. V časti **HTTP/S** nastav testovací scenár, Locust parametre a HTTP metódu.
+4. Spusti test cez **Start Test**.
+5. Po skončení testu prejdi do **Generate Report**.
+6. Vygeneruj PDF report.
+7. Po testovaní použi **Cleanup**, aby sa IP adresy odstránili z interface.
 
 ---
 
-## Target and Endpoints
+## Endpointy
 
-Target examples:
+Endpointy sa zadávajú do poľa **Endpoint path**.
 
-```text
-http://192.168.100.73:8080
-http://[fd00:100::73]:8080
-```
-
-Endpoint examples:
+Jeden endpoint:
 
 ```text
 /
-/health
-/api/status
 ```
 
-Multiple endpoints can be entered as comma-separated values:
+Viac endpointov:
 
 ```text
 /,/health,/api/status,/api/products
 ```
 
-Endpoint paths are normalized automatically. For example, `api/products` becomes `/api/products`.
+Ak endpoint neobsahuje úvodnú lomku, aplikácia ju automaticky doplní.
 
 ---
 
-## Test Stages
+## HTTP/S nastavenia
 
-Each stage defines a load level for a specific duration.
+Podporované metódy:
 
 ```text
-Duration (s) = duration of the current stage only
-Users        = number of active users in the stage
-Spawn rate   = user spawn rate for the stage
+GET
+POST
 ```
 
-Example:
+Pri `GET` sa request body nepoužíva.  
+Pri `POST` je možné zadať JSON telo požiadavky.
+
+Príklad:
+
+```json
+{
+  "message": "hello",
+  "user": "test"
+}
+```
+
+---
+
+## Locust stages
+
+Test sa skladá z jednej alebo viacerých fáz. Každá fáza obsahuje:
+
+```text
+Duration (s)
+Users
+Spawn rate
+Wait mode
+Min
+Max
+```
+
+Hodnota `Duration (s)` znamená trvanie konkrétnej fázy, nie kumulatívny čas.
+
+Príklad:
 
 ```text
 Stage 1: 60 s, 10 users
@@ -130,7 +160,7 @@ Stage 2: 120 s, 50 users
 Stage 3: 120 s, 100 users
 ```
 
-Total test duration:
+Celkové trvanie testu bude:
 
 ```text
 60 + 120 + 120 = 300 s
@@ -138,70 +168,124 @@ Total test duration:
 
 ---
 
-## Source Ports
+## Wait mode
 
-The **Source ports** field is optional.
+Dostupné režimy čakania medzi requestmi:
 
-If it is empty, the operating system assigns ephemeral ports automatically.
+```text
+between
+constant
+constant_throughput
+```
 
-Example shown in the report:
+Význam:
+
+```text
+between              náhodné čakanie medzi Min a Max
+constant             fixné čakanie podľa hodnoty Min
+constant_throughput  Min sa používa ako cieľová priepustnosť na používateľa
+```
+
+---
+
+## Source ports
+
+Pole **Source ports** je voliteľné.
+
+Ak zostane prázdne, operačný systém použije ephemeral porty automaticky.
+
+Príklad zobrazenia v reporte:
 
 ```text
 OS ephemeral (32768–60999)
 ```
 
-You can also set a specific port or range:
+Možné ručné zadanie:
 
 ```text
 1025
+```
+
+alebo rozsah:
+
+```text
 1024-2000
-1025,1026,1027
 ```
 
 ---
 
 ## IP Pool
 
-The IP pool defines source IP addresses used by the tester.
+IP pool určuje zdrojové IP adresy, z ktorých sa budú odosielať požiadavky.
 
-Supported modes:
-
-- IPv4 range
-- IPv6 range
-- IPv6 prefix mode
-- Custom IP pool file
-
-Example IPv6 range:
+Podporované možnosti:
 
 ```text
-IP start: fd00:100::1000
-IP end:   fd00:100::1050
-Prefix:   64
+IPv4 range
+IPv6 range
+IPv6 prefix
+Custom pool file
 ```
 
-Avoid using a range that contains the server IP address.
+Príklad IPv6 poolu:
+
+```text
+fd00:100::1000 – fd00:100::1050
+```
+
+Odporúčanie:
+
+```text
+Server:      fd00:100::73
+Tester pool: fd00:100::1000 – fd00:100::1050
+```
+
+Tester by nemal používať rovnakú IP adresu ako server.
 
 ---
 
-## Reachability Monitoring
+## Reachability monitoring
 
-Reachability monitoring runs during the load test and periodically checks whether the target is reachable.
+Reachability monitoring overuje dostupnosť cieľového servera počas testu.  
+Je oddelený od Locust requestov.
 
-Configurable parameters:
+Nastaviteľné hodnoty:
 
-- source IP
-- interface
-- interval
-- timeout
-- failure threshold
+```text
+Source IP
+Interface
+Interval
+Timeout
+Failure threshold
+```
 
-Reachability failures are evaluated separately from Locust HTTP request failures.
+Reachability threshold sa vyhodnocuje samostatne a nemieša sa s Locust request failure thresholdom.
 
 ---
 
-## Generated Files
+## Report
 
-Common generated files:
+PDF report obsahuje najmä:
+
+```text
+Test Information
+Performance Overview
+Test Stages
+Network Topology
+Reachability
+Time Series Charts
+Network Traffic Analysis
+Failure Details
+```
+
+Niektoré časti sa zobrazia iba vtedy, keď majú význam.  
+Napríklad detailná tabuľka failures sa zobrazí iba pri zapnutej možnosti **Include failure details table**.
+
+---
+
+## Generované súbory
+
+Počas testovania vznikajú najmä tieto súbory:
 
 ```text
 data/report_stats.csv
@@ -216,75 +300,84 @@ port_pool.txt
 report/Locust_Report.pdf
 ```
 
-These files are generated during testing and normally should not be committed to version control.
+Tieto súbory predstavujú výstupy konkrétnych testov a bežne sa nemusia ukladať do repozitára.
 
 ---
 
-## Recommended `.gitignore`
+## Odporúčaný .gitignore
 
 ```gitignore
 __pycache__/
 *.pyc
 locust_env/
-venv/
-.venv/
 
 data/*.csv
 report/*.pdf
 report/*.png
 
-test_config.csv
 ip_pool.txt
 port_pool.txt
+test_config.csv
 
 *.p12
 *.pfx
-
 .vscode/
 .idea/
-.DS_Store
 ```
 
 ---
 
-## Troubleshooting
+## Časté problémy
 
-### IPv6 `ConnectTimeout`
+### IPv6 ConnectTimeout
 
-Check whether the source IP pool and target IP are in the correct IPv6 network.
+Skontroluj, či sú source IP adresy v správnej IPv6 sieti.
 
-Incorrect example:
+Nesprávne:
 
 ```text
 Source IP: fd00::100
 Target:    fd00:100::73
 ```
 
-Correct example:
+Správne:
 
 ```text
 Source IP: fd00:100::1000
 Target:    fd00:100::73
 ```
 
+---
+
 ### Link-local IPv6
 
-For link-local IPv6 addresses, include the interface scope in the URL.
+Pri link-local IPv6 adrese je potrebné uviesť aj interface scope.
 
-Example:
+Príklad:
 
 ```text
 http://[fe80::20c:29ff:fe7e:a4b0%25ens33]:8080
 ```
 
-### Empty source ports shown as `nan`
+---
 
-An empty source ports field means the OS uses ephemeral ports. The report should show the OS ephemeral range, not `nan`.
+### Ping funguje, ale test nie
+
+Skontroluj:
+
+```text
+cieľovú URL
+port servera
+endpoint
+firewall
+IP pool
+interface
+timeouty
+či server počúva na IPv4/IPv6
+```
 
 ---
 
-## Notes
+## Poznámka
 
-- Run **Cleanup** after testing to remove generated IP addresses from the interface.
-- Do not commit private certificates such as `.p12` or `.pfx` files.
-- For realistic testing, use a separate tester and server machine in the same local network.
+Projekt je určený ako prototyp nástroja na záťažové testovanie v rámci diplomovej práce.
