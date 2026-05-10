@@ -543,7 +543,8 @@ class LocustGUI(ctk.CTk):
             "reach_timeout":    os.getenv("REACH_TIMEOUT"),
             "reach_src_ip":     os.getenv("REACH_SRC_IP", ""),
             "reach_interface":  os.getenv("REACH_INTERFACE", ""),
-            "reach_threshold":  os.getenv("REACH_THRESHOLD"),
+            "request_threshold": os.getenv("REQUEST_FAILURE_THRESHOLD", "1"),
+            "reach_threshold":  os.getenv("REACH_THRESHOLD", "5"),
         }
         for key, value in mapping.items():
             if value and key in self.entries:
@@ -599,7 +600,8 @@ class LocustGUI(ctk.CTk):
             "REACH_TIMEOUT":   self.get("reach_timeout"),
             "REACH_SRC_IP":    self.get("reach_src_ip"),
             "REACH_INTERFACE": self.get("reach_interface"),
-            "REACH_THRESHOLD": self.get("reach_threshold"),
+            "REQUEST_FAILURE_THRESHOLD": self.get("request_threshold") or "1",
+            "REACH_THRESHOLD": self.get("reach_threshold") or "5",
             "STAGES":          json.dumps(self._get_stages()),
         }
         # Validate all numeric timeout fields before saving
@@ -617,6 +619,22 @@ class LocustGUI(ctk.CTk):
                 except (ValueError, AssertionError):
                     self.write_log(
                         f"⚠ {label} '{val}' is invalid (must be a positive number). Skipping save."
+                    )
+                    return
+
+        threshold_fields = [
+            ("REQUEST_FAILURE_THRESHOLD", "Request failure threshold"),
+            ("REACH_THRESHOLD",           "Reachability failure threshold"),
+        ]
+        for env_key, label in threshold_fields:
+            val = mapping.get(env_key, "")
+            if val:
+                try:
+                    x = float(val)
+                    assert 0 <= x <= 100
+                except (ValueError, AssertionError):
+                    self.write_log(
+                        f"⚠ {label} '{val}' is invalid (must be 0–100 %). Skipping save."
                     )
                     return
 
@@ -842,6 +860,8 @@ class LocustGUI(ctk.CTk):
         self._field_row(card, 1, "Source ports", "src_ports", "",          col=2,
                         ph="e.g. 1024-65535",
                         help="Source port range for outgoing connections.\nFormats: single (8080), range (1024-65535), list (8080,8081,8082).\nLeave empty to let the OS assign ports automatically.")
+        self._field_row(card, 2, "Request failure threshold (%)", "request_threshold", "1", col=2,
+                        help="Maximum allowed percentage of failed Locust HTTP requests.\nExample: 1 means the load test is considered unstable if more than 1% of requests fail.")
 
         # SSL checkbox
         self._ssl_verify_var = ctk.BooleanVar(value=os.getenv("SSL_VERIFY", "true").lower() != "false")
@@ -1007,8 +1027,8 @@ class LocustGUI(ctk.CTk):
                         help="Source IP used for reachability probes.\nLeave empty to use the first IP from the pool.\nUseful when you want probes from a specific address.")
         self._combo_row(card3, 1, "Interface", "reach_interface", [""] + get_network_interfaces(), "", col=2,
                         help="Network interface used for reachability probes.\nLeave empty to use the main interface defined above.")
-        self._field_row(card3, 2, "Failure threshold (%)", "reach_threshold", "50", col=0,
-                        help="Percentage of failed probes above which the test\nis marked as FAILED in the PDF report.\nExample: 50 means more than half of probes must succeed.")
+        self._field_row(card3, 2, "Reachability failure threshold (%)", "reach_threshold", "5", col=0,
+                        help="Maximum allowed percentage of failed reachability probes.\nThis threshold applies only to reachability monitoring, not to Locust request failures.")
 
         # ── Network Monitor ───────────────────────────────────────
         row = self._card_header(scroll, "Network Monitor", row)
@@ -2181,7 +2201,7 @@ class LocustGUI(ctk.CTk):
                 "source_range", "ip_pool_count", "ip_pool_range", "src_ports", "ip_version", "interface",
                 "processes", "stop_timeout",
                 "reach_interval", "reach_timeout", "reach_src_ip", "reach_interface",
-                "reach_threshold", "test_type",
+                "request_threshold", "reach_threshold", "test_type",
             ])
             writer.writeheader()
             writer.writerow({
@@ -2200,7 +2220,8 @@ class LocustGUI(ctk.CTk):
                 "reach_timeout":    self.get("reach_timeout") or "5",
                 "reach_src_ip":     src_ip,
                 "reach_interface":  reach_iface,
-                "reach_threshold":  self.get("reach_threshold") or "50",
+                "request_threshold": self.get("request_threshold") or "1",
+                "reach_threshold":  self.get("reach_threshold") or "5",
                 "processes":        self.get("processes"),
                 "stop_timeout":     self.get("stop_timeout") or "60",
                 "test_type":        self.get("test_type"),
@@ -2218,14 +2239,18 @@ class LocustGUI(ctk.CTk):
                 ip_pool_count   = str(cfg.get("ip_pool_count",   ""))
                 ip_pool_range   = str(cfg.get("ip_pool_range",   ""))
                 interface       = str(cfg.get("interface",       self.get("interface")))
-                reach_src_ip    = str(cfg.get("reach_src_ip",    self.get("reach_src_ip")))
-                reach_threshold = float(cfg.get("reach_threshold", 50))
-                test_type_cfg   = str(cfg.get("test_type",       self.get("test_type")))
+                reach_src_ip       = str(cfg.get("reach_src_ip",    self.get("reach_src_ip")))
+                request_threshold = float(cfg.get("request_threshold", self.get("request_threshold") or 1))
+                reach_threshold   = float(cfg.get("reach_threshold",   self.get("reach_threshold") or 5))
+                test_type_cfg     = str(cfg.get("test_type",       self.get("test_type")))
                 processes       = str(cfg.get("processes",       self.get("processes")))
                 stop_timeout    = str(cfg.get("stop_timeout",    self.get("stop_timeout") or "60"))
-                self.write_log(f"✓ Params: {target_clean} | {source_range} | threshold={reach_threshold}%")
+                self.write_log(
+                    f"✓ Params: {target_clean} | {source_range} | "
+                    f"request_threshold={request_threshold}% | reach_threshold={reach_threshold}%"
+                )
                 return (target_clean, target_ip, source_range, interface,
-                        reach_threshold, test_type_cfg, processes, stop_timeout,
+                        request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
                         reach_src_ip, ip_pool_count, ip_pool_range)
             except Exception as e:
                 self.write_log(f"⚠ Error reading config: {e}")
@@ -2234,7 +2259,8 @@ class LocustGUI(ctk.CTk):
             self._get_target_clean(),
             self._get_source_range(),
             self.get("interface"),
-            float(self.get("reach_threshold") or 50),
+            float(self.get("request_threshold") or 1),
+            float(self.get("reach_threshold") or 5),
             self.get("test_type"),
             self.get("processes"),
             self.get("stop_timeout") or "60",
@@ -2529,7 +2555,7 @@ class LocustGUI(ctk.CTk):
     def _generate_report_thread(self):
         try:
             (target_clean, target_ip, source_range, interface,
-             reach_threshold, test_type_cfg, processes, stop_timeout,
+             request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
              reach_src_ip, ip_pool_count, ip_pool_range) = self._load_test_config(BASE_DIR)
 
             report_name = self._report_name_entry.get().strip() or "Locust_Report"
@@ -2559,6 +2585,7 @@ class LocustGUI(ctk.CTk):
                 ip_pool_count   = ip_pool_count,
                 ip_pool_range   = ip_pool_range,
                 interface       = interface,
+                request_threshold = request_threshold / 100,
                 reach_threshold = reach_threshold / 100,
                 test_type       = test_type_cfg,
                 src_ports       = self.get("src_ports") or None,
@@ -2681,3 +2708,4 @@ class LocustGUI(ctk.CTk):
 if __name__ == "__main__":
     app = LocustGUI()
     app.mainloop()
+

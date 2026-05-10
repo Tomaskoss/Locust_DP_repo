@@ -20,6 +20,11 @@ from reportlab.platypus.flowables import Flowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from datetime import datetime
 
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
 # === PATHS ===
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(BASE_DIR, "data")
@@ -360,64 +365,196 @@ def save_chart(path, dpi=180):
 # CHART FUNCTIONS
 # ================================================================
 
-def add_time_series_charts(history_df, story):
+def add_time_series_charts(history_df, story, request_failure_threshold=None):
     if 'Timestamp' not in history_df.columns:
         return
 
+    history_df = history_df.copy()
     history_df['Timestamp'] = pd.to_datetime(history_df['Timestamp'], unit='s')
+
+    try:
+        if request_failure_threshold is None:
+            request_failure_threshold = float(os.getenv("REQUEST_FAILURE_THRESHOLD", "1"))
+        else:
+            request_failure_threshold = float(request_failure_threshold)
+    except Exception:
+        request_failure_threshold = 1.0
+
+    # Ak príde hodnota ako 0.01, interpretujeme ju ako 1 %
+    if request_failure_threshold < 1:
+        request_failure_threshold = request_failure_threshold * 100
+
+    # Bezpečná konverzia metrík
+    requests_s = pd.to_numeric(history_df['Requests/s'], errors='coerce').fillna(0)
+    failures_s = pd.to_numeric(history_df['Failures/s'], errors='coerce').fillna(0)
+
+    # Percentuálna chybovosť v každom časovom bode
+    failure_rate_pct = (failures_s / requests_s.replace(0, pd.NA) * 100).fillna(0)
+
+    # ================================================================
+    # Requests/s + Failures/s + Failure Rate (%) + Threshold (%)
+    # ================================================================
 
     p1 = os.path.join(REPORT_DIR, "chart_rps_failures.png")
     fig, ax = plt.subplots(figsize=(7, 3))
-    ax.fill_between(history_df['Timestamp'], history_df['Requests/s'],
-                    alpha=0.15, color="#1A73E8")
-    ax.plot(history_df['Timestamp'], history_df['Requests/s'],
-            label='Requests/s', color="#1A73E8", linewidth=1.8)
-    ax.plot(history_df['Timestamp'], history_df['Failures/s'],
-            label='Failures/s', color="#EA4335", linewidth=1.8, linestyle="--")
-    ax.set_ylabel("Requests/s")
-    ax.legend(fontsize=8, framealpha=0.8)
+
+    # Ľavá os: Requests/s a Failures/s
+    ax.fill_between(
+        history_df['Timestamp'],
+        requests_s,
+        alpha=0.15,
+        color="#1A73E8"
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        requests_s,
+        label='Requests/s',
+        color="#1A73E8",
+        linewidth=1.8
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        failures_s,
+        label='Failures/s',
+        color="#EA4335",
+        linewidth=1.8,
+        linestyle="--"
+    )
+
+    ax.set_ylabel("Requests/s / Failures/s")
     _apply_chart_style(ax, "Requests per Second Over Time")
+
+    # Pravá os: Failure Rate (%)
+    ax2 = ax.twinx()
+
+    ax2.plot(
+        history_df['Timestamp'],
+        failure_rate_pct,
+        label='Failure Rate (%)',
+        color="#922b21",
+        linewidth=1.5,
+        linestyle="-."
+    )
+
+    # Horizontálna hranica request failure thresholdu
+    ax2.axhline(
+        y=request_failure_threshold,
+        color="#F9AB00",
+        linestyle="--",
+        linewidth=1.5,
+        alpha=0.95,
+        label=f'Request Failure Threshold ({request_failure_threshold:g}%)'
+    )
+
+    ax2.set_ylabel("Failure Rate (%)", fontsize=9, color="#922b21")
+    ax2.tick_params(axis='y', colors="#922b21", labelsize=8)
+    ax2.spines["right"].set_color("#922b21")
+
+    max_failure_pct = max(float(failure_rate_pct.max()), request_failure_threshold)
+    y2_max = max(5.0, max_failure_pct * 1.35)
+    y2_max = min(y2_max, 100.0)
+    ax2.set_ylim(0, y2_max)
+
+    # Spoločná legenda pre obe osi
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+
+    ax.legend(
+        lines1 + lines2,
+        labels1 + labels2,
+        fontsize=7.5,
+        framealpha=0.85,
+        loc="upper left"
+    )
+
     save_chart(p1)
+
     story.append(Image(p1, width=440, height=190))
     story.append(Spacer(1, 10))
 
+    # ================================================================
+    # Response times
+    # ================================================================
+
     p2 = os.path.join(REPORT_DIR, "chart_response_times.png")
     fig, ax = plt.subplots(figsize=(7, 3))
+
     ax.fill_between(
         history_df['Timestamp'],
         history_df['Total Min Response Time'] / 1000,
         history_df['Total Max Response Time'] / 1000,
-        alpha=0.08, color="#1A73E8"
+        alpha=0.08,
+        color="#1A73E8"
     )
-    ax.plot(history_df['Timestamp'], history_df['Total Min Response Time']    / 1000,
-            label='Min',    linestyle='--', color="#34A853", linewidth=1.5)
-    ax.plot(history_df['Timestamp'], history_df['Total Median Response Time'] / 1000,
-            label='Median', linestyle='-',  color="#1A73E8", linewidth=2)
-    ax.plot(history_df['Timestamp'], history_df['Total Max Response Time']    / 1000,
-            label='Max',    linestyle='-.', color="#EA4335", linewidth=1.5)
+
+    ax.plot(
+        history_df['Timestamp'],
+        history_df['Total Min Response Time'] / 1000,
+        label='Min',
+        linestyle='--',
+        color="#34A853",
+        linewidth=1.5
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        history_df['Total Median Response Time'] / 1000,
+        label='Median',
+        linestyle='-',
+        color="#1A73E8",
+        linewidth=2
+    )
+
+    ax.plot(
+        history_df['Timestamp'],
+        history_df['Total Max Response Time'] / 1000,
+        label='Max',
+        linestyle='-.',
+        color="#EA4335",
+        linewidth=1.5
+    )
+
     ax.set_ylabel("Response Time (s)")
     ax.legend(fontsize=8, framealpha=0.8)
     _apply_chart_style(ax, "Response Times Over Time")
     save_chart(p2)
+
     story.append(Image(p2, width=440, height=190))
     story.append(Spacer(1, 10))
+
+    # ================================================================
+    # User count
+    # ================================================================
 
     if 'User Count' in history_df.columns:
         p3 = os.path.join(REPORT_DIR, "chart_users.png")
         fig, ax = plt.subplots(figsize=(7, 3))
-        ax.fill_between(history_df['Timestamp'], history_df['User Count'],
-                        alpha=0.15, color="#7B2FBE")
-        ax.plot(history_df['Timestamp'], history_df['User Count'],
-                color="#7B2FBE", linewidth=1.8, label="Users")
+
+        ax.fill_between(
+            history_df['Timestamp'],
+            history_df['User Count'],
+            alpha=0.15,
+            color="#7B2FBE"
+        )
+
+        ax.plot(
+            history_df['Timestamp'],
+            history_df['User Count'],
+            color="#7B2FBE",
+            linewidth=1.8,
+            label="Users"
+        )
+
         ax.set_ylabel("Number of Users")
         ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         ax.legend(fontsize=8)
         _apply_chart_style(ax, "Number of Users Over Time")
         save_chart(p3)
+
         story.append(Image(p3, width=440, height=190))
         story.append(Spacer(1, 10))
-
-
 # ================================================================
 # REACHABILITY FUNCTIONS 
 # ================================================================
@@ -852,8 +989,7 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
         print(f"Error creating delay chart: {e}")
         import traceback
         traceback.print_exc()
-def add_network_traffic_charts(network_file, history_file, story,
-                               failure_threshold=0.5):
+def add_network_traffic_charts(network_file, history_file, story):
     if not os.path.exists(network_file):
         print(f"Network file '{network_file}' not found, charts skipped")
         return
@@ -861,19 +997,6 @@ def add_network_traffic_charts(network_file, history_file, story,
         network_df = pd.read_csv(network_file, on_bad_lines='skip')
         network_df = network_df[network_df['timestamp'] > 1_000_000_000].copy()
         network_df['timestamp'] = pd.to_datetime(network_df['timestamp'], unit='s')
-
-        unreachable_ts = []
-        if os.path.exists(history_file):
-            try:
-                hdf = pd.read_csv(history_file)
-                hdf['Timestamp'] = pd.to_datetime(hdf['Timestamp'], unit='s')
-                if 'Failures/s' in hdf.columns and 'Requests/s' in hdf.columns:
-                    for _, row in hdf.iterrows():
-                        if (row['Requests/s'] > 0 and
-                                (row['Failures/s'] / row['Requests/s']) > failure_threshold):
-                            unreachable_ts.append(row['Timestamp'])
-            except Exception as e:
-                print(f"Warning: {e}")
 
         p4    = os.path.join(REPORT_DIR, "chart_network_total.png")
         rx_mb = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / (1024 * 1024)
@@ -891,8 +1014,6 @@ def add_network_traffic_charts(network_file, history_file, story,
         ax2.plot(network_df['timestamp'], tx_mb,
                  color="#7B2FBE", linewidth=1.8, label="TX MB")
         ax2.set_ylabel("Transmitted MB", color="#7B2FBE", fontsize=9)
-        for ts in unreachable_ts:
-            ax1.axvline(x=ts, color="#EA4335", alpha=0.25, linewidth=1)
         lines1, l1 = ax1.get_legend_handles_labels()
         lines2, l2 = ax2.get_legend_handles_labels()
         ax1.legend(lines1 + lines2, l1 + l2, fontsize=8, loc="upper left")
@@ -911,8 +1032,6 @@ def add_network_traffic_charts(network_file, history_file, story,
                         alpha=0.08, color="#7B2FBE")
         ax.plot(network_df['timestamp'], network_df['tx_kbps'],
                 color="#7B2FBE", linewidth=1.8, label="TX kB/s")
-        for ts in unreachable_ts:
-            ax.axvline(x=ts, color="#EA4335", alpha=0.25, linewidth=1)
         ax.set_ylabel("Speed (kB/s)")
         ax.legend(fontsize=8)
         _apply_chart_style(ax, "Network Transfer Speed")
@@ -1094,13 +1213,13 @@ def sign_report(input_path, output_path,
 
 def create_pdf_report(stats_file, history_file, output_file,
                       meta_file=None, network_file=None,
-                      reach_file=None,                         
-                      reach_timeout=None,                      
-                      comment=None,
+                      reach_file=None,
+                      reach_timeout=None,
+                      comment=None, request_failure_threshold=None,
                       target_ip=None, source_ip=None, interface=None,
-                      reach_threshold=0.5, test_type=None,
+                      request_threshold=0.01, reach_threshold=0.05, test_type=None,
                       src_ports=None, reach_src_ip=None,
-                      ip_pool_count=None, ip_pool_range=None,include_failures=False,
+                      ip_pool_count=None, ip_pool_range=None, include_failures=False,
                       sign=False, p12_path=None, p12_pass=b"yourpassword"):
 
     if meta_file    is None: meta_file    = META_FILE
@@ -1113,6 +1232,49 @@ def create_pdf_report(stats_file, history_file, output_file,
             reach_timeout = float(_rt) if _rt else None
         except Exception:
             reach_timeout = None
+
+    # ── Threshold normalization ───────────────────────────────────
+    # Internally thresholds are stored as fractions:
+    # 1%  -> 0.01
+    # 5%  -> 0.05
+    # GUI/env values may come either as 1 / 5 or as 0.01 / 0.05.
+    def _threshold_to_fraction(value, default_fraction):
+        try:
+            v = float(value)
+            if v >= 1.0:
+                v = v / 100.0
+            return max(0.0, min(v, 1.0))
+        except Exception:
+            return default_fraction
+
+    # Request failure threshold applies only to Locust request failures.
+    request_threshold = _threshold_to_fraction(request_threshold, 0.01)
+
+    if request_failure_threshold is not None:
+        request_threshold = _threshold_to_fraction(
+            request_failure_threshold,
+            request_threshold
+        )
+    else:
+        env_req_threshold = os.getenv("REQUEST_FAILURE_THRESHOLD")
+        if env_req_threshold not in (None, ""):
+            request_threshold = _threshold_to_fraction(
+                env_req_threshold,
+                request_threshold
+            )
+
+    # Reachability threshold applies only to reachability probes.
+    reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
+
+    env_reach_threshold = (
+        os.getenv("REACHABILITY_FAILURE_THRESHOLD")
+        or os.getenv("REACH_THRESHOLD")
+    )
+    if env_reach_threshold not in (None, ""):
+        reach_threshold = _threshold_to_fraction(
+            env_reach_threshold,
+            reach_threshold
+        )
 
     if not os.path.exists(stats_file):
         print(f"CSV file '{stats_file}' not found.")
@@ -1156,6 +1318,19 @@ def create_pdf_report(stats_file, history_file, output_file,
 
     if not endpoint_path:
         endpoint_path = "/"
+           # Locust parameters used during the test
+    stop_timeout = os.getenv("STOP_TIMEOUT", "Unknown").strip()
+    connect_timeout = os.getenv("CONNECT_TIMEOUT", "Unknown").strip()
+    read_timeout = os.getenv("READ_TIMEOUT", "Unknown").strip()
+    processes = os.getenv("PROCESSES", "Unknown").strip()
+
+    def _fmt_seconds(value):
+        if value in (None, "", "Unknown"):
+            return "Unknown"
+        try:
+            return f"{float(value):g} s"
+        except Exception:
+            return str(value)
 
     topology_output = os.path.join(REPORT_DIR, "topology_diagram.png")
     generate_topology_diagram(
@@ -1225,7 +1400,12 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
         [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
         [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else _get_os_port_range(), S["value"])],
-        [Paragraph("Failure threshold", S["label"]), Paragraph(f"{int(reach_threshold*100)}%", S["value"])],
+        [Paragraph("Stop timeout",      S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
+        [Paragraph("Connect timeout",   S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
+        [Paragraph("Read timeout",      S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
+        [Paragraph("Processes",         S["label"]), Paragraph(str(processes), S["value"])],
+        [Paragraph("Request failure threshold",      S["label"]), Paragraph(f"{request_threshold*100:.1f}%", S["value"])],
+        [Paragraph("Reachability failure threshold", S["label"]), Paragraph(f"{reach_threshold * 100:.1f}%", S["value"])],
         [Paragraph("Report generated",  S["label"]),
          Paragraph(datetime.now().strftime('%d-%m-%Y  %H:%M:%S'),                            S["value"])],
     ], col_widths=[160, None]))
@@ -1244,9 +1424,9 @@ def create_pdf_report(stats_file, history_file, output_file,
     story.append(ColorBand("  Performance Overview"))
     story.append(Spacer(1, 8))
 
-    threshold_pct = round(reach_threshold * 100, 1)
-    is_stable     = failure_rate <= threshold_pct
-    stable_text   = "Stable and reachable" if is_stable else "Unstable / unreachable"
+    request_threshold_pct = round(request_threshold * 100, 1)
+    is_stable     = failure_rate <= request_threshold_pct
+    stable_text   = "Stable" if is_stable else "Unstable"
     stable_color  = C_ACCENT if is_stable else C_DANGER
 
     story.append(make_info_table([
@@ -1254,8 +1434,8 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Success Count",         S["label"]), Paragraph(str(success),        S["value"])],
         [Paragraph("Failure Count",         S["label"]), Paragraph(str(fail_count),     S["value"])],
         [Paragraph("Failure Rate",          S["label"]), Paragraph(f"{failure_rate}%",  S["value"])],
-        [Paragraph("Failure threshold",     S["label"]), Paragraph(f"{threshold_pct}%", S["value"])],
-        [Paragraph("Stable & Reachable",    S["label"]),
+        [Paragraph("Request failure threshold", S["label"]), Paragraph(f"{request_threshold_pct}%", S["value"])],
+        [Paragraph("Load Test Status",      S["label"]),
          Paragraph(stable_text, ParagraphStyle(
              "stable", fontSize=10, fontName="Helvetica-Bold", textColor=stable_color
          ))],
@@ -1453,25 +1633,48 @@ def create_pdf_report(stats_file, history_file, output_file,
         history_df = pd.read_csv(history_file)
         story.append(ColorBand("  Time Series Charts"))
         story.append(Spacer(1, 10))
-        add_time_series_charts(history_df, story)
+        add_time_series_charts(
+            history_df,
+            story,
+            request_failure_threshold=request_threshold * 100
+        )
 
     # ── NETWORK TRAFFIC ───────────────────────────────────────────
     story.append(PageBreak())
     story.append(ColorBand("  Network Traffic Analysis"))
     story.append(Spacer(1, 10))
-    add_network_traffic_charts(
-        network_file, history_file, story,
-        failure_threshold=reach_threshold
-    )
+    add_network_traffic_charts(network_file, history_file, story)
 
     # ── FINAL AVAILABILITY SUMMARY ───────────────────────────────
-    story.append(PageBreak())
-    add_final_availability_summary_chart(
-        story,
-        reach_df=reach_df,
-        success=success,
-        fail_count=fail_count
-    )
+    # Final Availability Summary sa pridá iba vtedy, ak reachability
+    # zaznamenala aspoň jeden problém. Ak boli všetky probes úspešné,
+    # sekcia by iba duplicitne opakovala Reachability Overview.
+    show_final_availability = False
+
+    if reach_df is not None and not reach_df.empty:
+        reachability_ok = (
+            (reach_df["status_code"] >= 200) &
+            (reach_df["status_code"] < 300)
+        )
+        unreachable_count = int((~reachability_ok).sum())
+
+        if unreachable_count > 0:
+            show_final_availability = True
+
+    else:
+        # Ak reachability.csv neexistuje, môže sa použiť fallback
+        # na Locust štatistiky. Vtedy má summary stále význam.
+        if fail_count > 0:
+            show_final_availability = True
+
+    if show_final_availability:
+        story.append(PageBreak())
+        add_final_availability_summary_chart(
+            story,
+            reach_df=reach_df,
+            success=success,
+            fail_count=fail_count
+        )
 
     # ── BUILD ─────────────────────────────────────────────────────
     pdf.build(story, onFirstPage=_page_template, onLaterPages=_page_template)
@@ -1508,4 +1711,5 @@ if __name__ == "__main__":
         history_file = HISTORY_FILE,
         output_file  = PDF_FILE,
     )
+
 
