@@ -29,6 +29,8 @@ except ImportError:
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 REPORT_DIR = os.path.dirname(os.path.abspath(__file__))
+if load_dotenv is not None:
+    load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
 
 # === CONFIGURATION ===
 STATS_FILE    = os.path.join(DATA_DIR, "report_stats.csv")
@@ -1233,7 +1235,7 @@ def create_pdf_report(stats_file, history_file, output_file,
         except Exception:
             reach_timeout = None
 
-    # ── Threshold normalization ───────────────────────────────────
+        # ── Threshold normalization ───────────────────────────────────
     # Internally thresholds are stored as fractions:
     # 1%  -> 0.01
     # 5%  -> 0.05
@@ -1262,6 +1264,19 @@ def create_pdf_report(stats_file, history_file, output_file,
                 env_req_threshold,
                 request_threshold
             )
+
+    # Reachability threshold applies only to reachability probes.
+    reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
+
+    env_reach_threshold = (
+        os.getenv("REACHABILITY_FAILURE_THRESHOLD")
+        or os.getenv("REACH_THRESHOLD")
+    )
+    if env_reach_threshold not in (None, ""):
+        reach_threshold = _threshold_to_fraction(
+            env_reach_threshold,
+            reach_threshold
+        )
 
     # Reachability threshold applies only to reachability probes.
     reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
