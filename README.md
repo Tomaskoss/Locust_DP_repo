@@ -32,7 +32,6 @@
 - [PDF Report](#-pdf-report)
 - [Digitálne podpisovanie](#-digitálne-podpisovanie)
 - [Klávesové skratky](#️-klávesové-skratky)
-- [Riešenie problémov](#-riešenie-problémov)
 - [Licencia](#-licencia)
 - [Autor](#-autor)
 
