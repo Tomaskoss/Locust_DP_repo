@@ -224,8 +224,8 @@ INTERFACE=ens33                       # Sieťové rozhranie
 IP_VERSION=ipv4                       # ipv4 | ipv6
 
 # IPv4
-IP_START=192.168.100.100              # Začiatok rozsahu
-IP_END=192.168.100.120                # Koniec rozsahu
+IP_START=192.168.xxx.100              # Začiatok rozsahu
+IP_END=192.168.xxx.120                # Koniec rozsahu
 IPV4PREFIX=32                         # Prefix masky
 
 # IPv6
