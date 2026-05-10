@@ -2,7 +2,7 @@ import os
 import ipaddress
 import subprocess
 import argparse
-
+from itertools import islice
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ---- DEFAULT KONFIGURÁCIA ----
@@ -27,7 +27,7 @@ def generate_ip_range_v6(start_ip, end_ip):
 
 def generate_ip_prefix_v6(prefix_str, max_count=256):
     net = ipaddress.IPv6Network(prefix_str, strict=False)
-    return [str(ip) for ip in list(net.hosts())[:max_count]]
+    return [str(ip) for ip in islice(net.hosts(), max_count)]
 
 
 def add_ip_to_interface(ip, interface, ip_version="ipv4", prefix_len=None):
@@ -77,7 +77,6 @@ def main(
 ):
     # ── Zostavenie zoznamu IP ──────────────────────────────────────
     if ip_list is not None:
-        # GUI poslalo hotový zoznam (IPv6 prefix mód)
         pass
     elif ip_version == "ipv6":
         if ip6_prefix:

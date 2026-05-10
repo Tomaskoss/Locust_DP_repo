@@ -364,13 +364,24 @@ class SourceIPAdapter(HTTPAdapter):
         _local.source_params = (self.source_ip, self.source_port, self._use_v6)
         try:
             response = super().send(request, **kwargs)
-            actual = getattr(_local, "last_used_port", None)
-            if actual and actual != self.source_port:
-                self.source_port = actual
+
+            # If source_port == 0, the OS should choose a fresh ephemeral port.
+            # Do not store the real ephemeral port back into self.source_port,
+            # otherwise later requests may try to reuse the same 4-tuple:
+            # source IP + source port + destination IP + destination port.
+            if self.source_port != 0:
+                actual = getattr(_local, "last_used_port", None)
+                if actual and actual != self.source_port:
+                    self.source_port = actual
+
             return response
         finally:
             try:
                 del _local.source_params
+            except AttributeError:
+                pass
+            try:
+                del _local.last_used_port
             except AttributeError:
                 pass
 
@@ -391,14 +402,18 @@ class DynamicShape(LoadTestShape):
         if self._stages is None:
             try:
                 self._load()
-            except Exception as e:
-                print(f"[ERROR] DynamicShape: could not load stages.json: {e}")
+            except Exception:
                 return None
 
         t = self.get_run_time()
+        elapsed = 0
+
         for stage in self._stages:
-            if t < stage["duration"]:
+            elapsed += int(stage.get("duration", 0))
+
+            if t < elapsed:
                 return stage["users"], stage["spawn_rate"]
+
         return None
 
 
@@ -416,18 +431,24 @@ class MyUser(HttpUser):
 
     def wait_time(self):
         if _worker_stages and _worker_test_start is not None:
-            elapsed = _time.time() - _worker_test_start
+            elapsed_time = _time.time() - _worker_test_start
+            cumulative = 0
+
             for stage in _worker_stages:
-                if elapsed < stage["duration"]:
+                cumulative += int(stage.get("duration", 0))
+
+                if elapsed_time < cumulative:
                     mode = stage.get("wait_mode", "between")
                     wmin = float(stage.get("wait_min", 1.0))
                     wmax = float(stage.get("wait_max", 3.0))
+
                     if mode == "constant":
                         return wmin
                     elif mode == "constant_throughput":
                         return (1.0 / wmin) if wmin > 0 else 1.0
                     else:
                         return random.uniform(wmin, wmax)
+
         return random.uniform(1.0, 3.0)
 
     @classmethod

@@ -4,6 +4,7 @@ import tkinter.filedialog as fd
 import customtkinter as ctk
 import subprocess
 import threading
+import ipaddress
 import sys
 import os
 import time
@@ -18,7 +19,7 @@ from collections import defaultdict
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
 from CTkToolTip import CTkToolTip
-
+from itertools import islice
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -124,28 +125,56 @@ THEMES = {
 }
 
 STAGE_PRESETS = {
-    "Flat":      [{"duration": 300, "users": 50, "spawn_rate": 5, "wait_mode": "between", "wait_min": "1", "wait_max": "3"}],
-    
-    "Stress":    [{"duration": 60, "users": 10, "spawn_rate": 5, "wait_mode": "constant", "wait_min": "1", "wait_max": "3"},
-                  {"duration": 120, "users": 50, "spawn_rate": 10, "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
-                  {"duration": 180, "users": 100, "spawn_rate": 20, "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
-                  {"duration": 300, "users": 300, "spawn_rate": 50, "wait_mode": "constant", "wait_min": "0.1", "wait_max": "1"},
-                  {"duration": 360, "users": 1, "spawn_rate": 10, "wait_mode": "constant", "wait_min": "1", "wait_max": "3"}],
-                  
-    "Spike":     [{"duration": 30, "users": 10, "spawn_rate": 2, "wait_mode": "constant", "wait_min": "1", "wait_max": "1"},
-                  {"duration": 60, "users": 500, "spawn_rate": 200, "wait_mode": "constant", "wait_min": "0.1", "wait_max": "0.1"},
-                  {"duration": 90, "users": 10, "spawn_rate": 50, "wait_mode": "constant", "wait_min": "1", "wait_max": "1"}],
-                  
-    "Endurance": [{"duration": 300, "users": 10, "spawn_rate": 2, "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
-                  {"duration": 7200, "users": 25, "spawn_rate": 1, "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
-                  {"duration": 7500, "users": 1, "spawn_rate": 5, "wait_mode": "between", "wait_min": "2", "wait_max": "5"}],
-                  
-    "Capacity":  [{"duration": 120, "users": 10, "spawn_rate": 2, "wait_mode": "constant_throughput", "wait_min": "1", "wait_max": "1"},
-                  {"duration": 240, "users": 25, "spawn_rate": 2, "wait_mode": "constant_throughput", "wait_min": "2", "wait_max": "2"},
-                  {"duration": 360, "users": 50, "spawn_rate": 5, "wait_mode": "constant_throughput", "wait_min": "3", "wait_max": "3"},
-                  {"duration": 480, "users": 100, "spawn_rate": 10, "wait_mode": "constant_throughput", "wait_min": "5", "wait_max": "5"},
-                  {"duration": 600, "users": 150, "spawn_rate": 10, "wait_mode": "constant_throughput", "wait_min": "7", "wait_max": "7"},
-                  {"duration": 720, "users": 200, "spawn_rate": 20, "wait_mode": "constant_throughput", "wait_min": "10", "wait_max": "10"}],
+    "Flat": [
+        {"duration": 300, "users": 50, "spawn_rate": 5,
+         "wait_mode": "between", "wait_min": "1", "wait_max": "3"}
+    ],
+
+    "Stress": [
+        {"duration": 60,  "users": 10,  "spawn_rate": 5,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "3"},
+        {"duration": 60,  "users": 50,  "spawn_rate": 10,
+         "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+        {"duration": 60,  "users": 100, "spawn_rate": 20,
+         "wait_mode": "constant", "wait_min": "0.5", "wait_max": "2"},
+        {"duration": 120, "users": 300, "spawn_rate": 50,
+         "wait_mode": "constant", "wait_min": "0.1", "wait_max": "1"},
+        {"duration": 60,  "users": 1,   "spawn_rate": 10,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "3"},
+    ],
+
+    "Spike": [
+        {"duration": 30, "users": 10,  "spawn_rate": 2,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "1"},
+        {"duration": 30, "users": 500, "spawn_rate": 200,
+         "wait_mode": "constant", "wait_min": "0.1", "wait_max": "0.1"},
+        {"duration": 30, "users": 10,  "spawn_rate": 50,
+         "wait_mode": "constant", "wait_min": "1",   "wait_max": "1"},
+    ],
+
+    "Endurance": [
+        {"duration": 300,  "users": 10, "spawn_rate": 2,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+        {"duration": 6900, "users": 25, "spawn_rate": 1,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+        {"duration": 300,  "users": 1,  "spawn_rate": 5,
+         "wait_mode": "between", "wait_min": "2", "wait_max": "5"},
+    ],
+
+    "Capacity": [
+        {"duration": 120, "users": 10,  "spawn_rate": 2,
+         "wait_mode": "constant_throughput", "wait_min": "1",  "wait_max": "1"},
+        {"duration": 120, "users": 25,  "spawn_rate": 2,
+         "wait_mode": "constant_throughput", "wait_min": "2",  "wait_max": "2"},
+        {"duration": 120, "users": 50,  "spawn_rate": 5,
+         "wait_mode": "constant_throughput", "wait_min": "3",  "wait_max": "3"},
+        {"duration": 120, "users": 100, "spawn_rate": 10,
+         "wait_mode": "constant_throughput", "wait_min": "5",  "wait_max": "5"},
+        {"duration": 120, "users": 150, "spawn_rate": 10,
+         "wait_mode": "constant_throughput", "wait_min": "7",  "wait_max": "7"},
+        {"duration": 120, "users": 200, "spawn_rate": 20,
+         "wait_mode": "constant_throughput", "wait_min": "10", "wait_max": "10"},
+    ],
 }
 
 
@@ -179,6 +208,19 @@ ZOOM_STEP = 0.1
 #  HELPERS
 # ============================================================
 
+def darken(hex_color, amount=40):
+    hex_color = str(hex_color).lstrip("#")
+
+    if len(hex_color) != 6:
+        return "#000000"
+
+    r, g, b = tuple(
+        max(0, int(hex_color[i:i+2], 16) - amount)
+        for i in (0, 2, 4)
+    )
+
+    return f"#{r:02x}{g:02x}{b:02x}"
+
 def parse_ports(port_str):
     """Parse port string supporting ranges and combinations, e.g. '1024-2000,8080'."""
     if not port_str or not port_str.strip():
@@ -202,6 +244,34 @@ def parse_ports(port_str):
             except ValueError:
                 print(f"WARNING: invalid port '{part}', skipping")
     return result or None
+def normalize_endpoint_paths(value):
+    """
+    Normalize comma-separated endpoint paths.
+
+    Example:
+      "/,/health,/api/status,api/products"
+    becomes:
+      "/,/health,/api/status,/api/products"
+    """
+    raw = str(value or "/").strip()
+
+    if not raw:
+        return "/"
+
+    paths = []
+
+    for part in raw.split(","):
+        path = part.strip()
+
+        if not path:
+            continue
+
+        if not path.startswith("/"):
+            path = "/" + path
+
+        paths.append(path)
+
+    return ",".join(paths) if paths else "/"
 
 def is_ipv6(ip):
     try:
@@ -222,15 +292,34 @@ def ipv6_range_to_list(start_str, end_str, max_count=65536):
         )
     return [str(ipaddress.IPv6Address(i)) for i in range(start, end + 1)]
 
-def ipv6_prefix_to_list(prefix_str, max_count=256):
-    import ipaddress
-    net = ipaddress.IPv6Network(prefix_str, strict=False)
-    return [str(ip) for ip in list(net.hosts())[:max_count]]
+def ipv6_prefix_to_list(prefix_str, max_count=256, existing_ips=None, excluded_ips=None):
+    """
+    Generate the next block of IPv6 addresses from a prefix.
 
-def darken(hex_color, amount=40):
-    hex_color = hex_color.lstrip("#")
-    r, g, b   = tuple(max(0, int(hex_color[i:i+2], 16) - amount) for i in (0, 2, 4))
-    return f"#{r:02x}{g:02x}{b:02x}"
+    - Generates at most max_count addresses.
+    - Existing IPs are skipped.
+    - Excluded IPs are skipped as well.
+    - This prevents adding the target/server IP into the source IP pool.
+    """
+    net = ipaddress.IPv6Network(prefix_str, strict=False)
+    existing = set(existing_ips or [])
+    excluded = set(excluded_ips or [])
+
+    skip_ips = existing | excluded
+    result = []
+
+    for ip in net.hosts():
+        ip_str = str(ip)
+
+        if ip_str in skip_ips:
+            continue
+
+        result.append(ip_str)
+
+        if len(result) >= max_count:
+            break
+
+    return result
 
 def bind_card(widget, cmd, hover_color, normal_color):
     def on_click(e): cmd()
@@ -577,7 +666,7 @@ class LocustGUI(ctk.CTk):
         env_path = os.path.join(BASE_DIR, "config.env")
         mapping = {
             "TARGET_HOST":     self.get("target"),
-            "ENDPOINT_PATH":   self.get("endpoint_path") or "/",
+            "ENDPOINT_PATH":   normalize_endpoint_paths(self.get("endpoint_path") or "/"),
             "INTERFACE":       self.get("interface"),
             "TEST_TYPE":       self.get("test_type"),
             "IP_VERSION":      self._active_ip_version(),
@@ -588,7 +677,7 @@ class LocustGUI(ctk.CTk):
             "IP6_END":         self.entries["ip6_end"].get().strip(),
             "IP6_PREFIX":      self.entries["ip6_prefix"].get().strip(),
             "IPV6_MODE":       self.ipv6_mode.get(),
-            "IPV6RPREFIX":     self.entries["ipv6rangeprefix"].get(),
+            "IPV6RPREFIX":     self._get_prefix_len(),
             "PROCESSES":       self.get("processes"),
             "HTTP_METHOD":     self.get("http_method") or "GET",
             "REQUEST_BODY":    self.get_request_body(),
@@ -969,12 +1058,41 @@ class LocustGUI(ctk.CTk):
         self.ipv6_prefix_frame = ctk.CTkFrame(v6, fg_color="transparent")
         self.ipv6_prefix_frame.grid(row=1, column=0, columnspan=4, sticky="ew")
         self.ipv6_prefix_frame.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(self.ipv6_prefix_frame, text="IPv6 prefix",
-                     font=ctk.CTkFont(size=11), text_color=C_LABEL, anchor="w"
-                     ).grid(row=0, column=0, padx=(16, 8), pady=4, sticky="w")
-        e = ctk.CTkEntry(self.ipv6_prefix_frame, width=self.ENTR_W, fg_color=C_ENTRY)
+
+        lbl_ipv6_prefix = ctk.CTkLabel(
+            self.ipv6_prefix_frame,
+            text="IPv6 prefix ⓘ",
+            font=ctk.CTkFont(size=11),
+            text_color=C_LABEL,
+            anchor="w",
+            cursor="question_arrow"
+        )
+        lbl_ipv6_prefix.grid(row=0, column=0, padx=(16, 8), pady=4, sticky="w")
+
+        CTkToolTip(
+            lbl_ipv6_prefix,
+            message=(
+                "Prefix mode generates IPv6 addresses in blocks of max. 256 addresses.\n"
+                "If the current block already exists in ip_pool.txt, the next unused\n"
+                "block of 256 addresses from the same prefix will be generated.\n"
+                "The target/server IP address is skipped automatically to avoid IP conflicts.\n\n"
+                "Example: fd00:100::/64\n"
+                "1st setup: first 256 unused addresses\n"
+                "2nd setup: next 256 unused addresses"
+            ),
+            delay=0.3,
+            x_offset=10,
+            y_offset=-10
+        )
+
+        e = ctk.CTkEntry(
+            self.ipv6_prefix_frame,
+            width=self.ENTR_W,
+            fg_color=C_ENTRY
+        )
         e.insert(0, "fd00::/64")
         e.grid(row=0, column=1, padx=(0, 12), pady=4, sticky="ew")
+
         self.entries["ip6_prefix"] = e
         self.ipv6_prefix_frame.grid_remove()
 
@@ -1114,7 +1232,7 @@ class LocustGUI(ctk.CTk):
         self._hdr_min_lbl = None
         self._hdr_max_lbl = None
         for col, (txt, help_txt) in enumerate([
-            ("Duration (s)", None),
+            ("Duration (s)", "Duration of this stage only.\nExample: 60, 120, 120 means total test time 300 seconds."),
             ("Users",        None),
             ("Spawn rate",   None),
             ("Wait mode",    "between – random wait between Min and Max\nconstant – fixed wait of Min seconds\nconstant_throughput – Min = target RPS per user"),
@@ -1323,14 +1441,27 @@ class LocustGUI(ctk.CTk):
 
     def _add_stage_row(self):
         self._stages = self._get_stages()
-        last = self._stages[-1] if self._stages else {"duration": 0, "users": 0, "spawn_rate": 2}
+        last = self._stages[-1] if self._stages else {
+            "duration": 60,
+            "users": 0,
+            "spawn_rate": 2,
+            "wait_mode": "between",
+            "wait_min": 1,
+            "wait_max": 3,
+        }
+
         self._stages.append({
-            "duration":   last["duration"] + 60,
-            "users":      last["users"] + 10,
-            "spawn_rate": last["spawn_rate"],
+            "duration":   60,  # duration of this stage only
+            "users":      last.get("users", 0) + 10,
+            "spawn_rate": last.get("spawn_rate", 2),
+            "wait_mode":  last.get("wait_mode", "between"),
+            "wait_min":   last.get("wait_min", 1),
+            "wait_max":   last.get("wait_max", 3),
         })
+
         for btn in self._preset_btns.values():
             btn.configure(fg_color=C_ENTRY, text_color=C_TEXT)
+
         self._render_stage_rows()
 
     def _del_stage_row(self, idx):
@@ -1446,17 +1577,36 @@ class LocustGUI(ctk.CTk):
 
     def _update_stage_totals(self):
         try:
-            stages    = self._get_stages()
-            total_dur = stages[-1]["duration"] if stages else 0
-            max_users = max(s["users"] for s in stages) if stages else 0
-            m, s      = divmod(total_dur, 60)
-            dur_str   = f"{m}m {s}s" if m > 0 else f"{s}s"
+            stages = self._get_stages()
+
+            total_dur = sum(
+                int(stage.get("duration", 0))
+                for stage in stages
+            ) if stages else 0
+
+            max_users = max(
+                int(stage.get("users", 0))
+                for stage in stages
+            ) if stages else 0
+
+            m, s = divmod(total_dur, 60)
+            h, m = divmod(m, 60)
+
+            if h > 0:
+                dur_str = f"{h}h {m}m {s}s"
+            elif m > 0:
+                dur_str = f"{m}m {s}s"
+            else:
+                dur_str = f"{s}s"
+
             self._stages_total_lbl.configure(
                 text=f"Total: {dur_str}  •  Max users: {max_users}  •  Stages: {len(stages)}"
             )
-        except Exception:
-            pass
 
+        except Exception as e:
+            self._stages_total_lbl.configure(
+                text=f"Total: invalid stage values"
+            )
     def _save_stages(self):
         stages = self._get_stages()
         with open(os.path.join(BASE_DIR, "stages.json"), "w") as f:
@@ -2046,22 +2196,68 @@ class LocustGUI(ctk.CTk):
     def _get_ip_end(self):
         if self._active_ip_version() == "ipv6":
             if self.ipv6_mode.get() == "prefix":
-                import ipaddress
-                net   = ipaddress.IPv6Network(self.entries["ip6_prefix"].get().strip(), strict=False)
-                hosts = list(net.hosts())
-                return str(hosts[min(255, len(hosts)-1)])
+                ip_list = ipv6_prefix_to_list(
+                    self.entries["ip6_prefix"].get().strip(),
+                    max_count=256
+                )
+                return ip_list[-1] if ip_list else ""
             return self.entries["ip6_end"].get().strip()
         return self.entries["ip_end"].get().strip()
 
-    def _get_ip_list(self):
+    def _get_ip_list(self, existing_entries=None):
         if self._active_ip_version() == "ipv6":
             if self.ipv6_mode.get() == "prefix":
-                return ipv6_prefix_to_list(self.entries["ip6_prefix"].get().strip())
+                existing_ips = set()
+
+                if existing_entries:
+                    existing_ips = {ip for ip, _ in existing_entries}
+
+                excluded_ips = set()
+                target_ip = self._get_target_ip_for_pool_exclusion()
+
+                if target_ip:
+                    excluded_ips.add(target_ip)
+
+                return ipv6_prefix_to_list(
+                    self.entries["ip6_prefix"].get().strip(),
+                    max_count=256,
+                    existing_ips=existing_ips,
+                    excluded_ips=excluded_ips
+                )
+
             return ipv6_range_to_list(self._get_ip_start(), self._get_ip_end())
+
         return None
 
     def _get_target_clean(self):
         return urlparse(self.get("target")).hostname or self.get("target")
+        
+    def _get_target_ip_for_pool_exclusion(self):
+        """
+        Returns target IP address if the target host is an IP literal.
+        Used to prevent adding the server/target IP into the source IP pool.
+        """
+        try:
+            host = urlparse(self.get("target")).hostname or self.get("target")
+            host = str(host).strip().lstrip("[").rstrip("]")
+
+            try:
+                ipaddress.IPv6Address(host)
+                return host
+            except ValueError:
+                pass
+
+            try:
+                ipaddress.IPv4Address(host)
+                return host
+            except ValueError:
+                pass
+
+        except Exception:
+            pass
+
+        return None
+        
 
     def _get_source_range(self):
         start = self._get_ip_start()
@@ -2071,7 +2267,18 @@ class LocustGUI(ctk.CTk):
     def _get_prefix_len(self):
         """Vráti aktuálny prefix ako reťazec podľa aktívnej IP verzie."""
         if self._active_ip_version() == "ipv6":
+            if self.ipv6_mode.get() == "prefix":
+                try:
+                    net = ipaddress.IPv6Network(
+                        self.entries["ip6_prefix"].get().strip(),
+                        strict=False
+                    )
+                    return str(net.prefixlen)
+                except Exception:
+                    return "64"
+
             return self.entries["ipv6rangeprefix"].get()
+
         return self.entries["ipv4prefix"].get()
 
     # ================================================================
@@ -2162,7 +2369,20 @@ class LocustGUI(ctk.CTk):
         config_file  = os.path.join(script_dir, "test_config.csv")
         target_clean = self._get_target_clean()
         ip_ver       = self._active_ip_version()
-        clean        = target_clean.split(":")[0].lstrip("[").split("]")[0]
+
+        # Correct host extraction for IPv4, IPv6 and hostnames.
+        # Examples:
+        #   http://192.168.100.73:8080        -> 192.168.100.73
+        #   http://[fd00:100::73]:8080        -> fd00:100::73
+        #   https://www.example.com           -> www.example.com
+        try:
+            parsed = urlparse(self.get("target"))
+            clean = parsed.hostname or target_clean
+        except Exception:
+            clean = target_clean
+
+        clean = str(clean).strip().lstrip("[").rstrip("]")
+
         try:
             socket.inet_pton(socket.AF_INET6, clean)
             resolved_ip = clean
@@ -2198,8 +2418,12 @@ class LocustGUI(ctk.CTk):
         with open(config_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "target", "target_clean", "target_ip", "ip_start", "ip_end",
-                "source_range", "ip_pool_count", "ip_pool_range", "src_ports", "ip_version", "interface",
-                "processes", "stop_timeout",
+                "source_range", "ip_pool_count", "ip_pool_range", "src_ports",
+                "ip_version", "interface",
+
+                "http_method", "endpoint_path",
+                "processes", "stop_timeout", "connect_timeout", "read_timeout",
+
                 "reach_interval", "reach_timeout", "reach_src_ip", "reach_interface",
                 "request_threshold", "reach_threshold", "test_type",
             ])
@@ -2222,38 +2446,82 @@ class LocustGUI(ctk.CTk):
                 "reach_interface":  reach_iface,
                 "request_threshold": self.get("request_threshold") or "1",
                 "reach_threshold":  self.get("reach_threshold") or "5",
+                "http_method":      self.get("http_method") or "GET",
+                "endpoint_path":    normalize_endpoint_paths(self.get("endpoint_path") or "/"),
                 "processes":        self.get("processes"),
                 "stop_timeout":     self.get("stop_timeout") or "60",
+                "connect_timeout":  self.get("connect_timeout") or "5",
+                "read_timeout":     self.get("read_timeout") or "15",
                 "test_type":        self.get("test_type"),
             })
         self.write_log(f"✓ Config saved → {target_clean} ({resolved_ip}) [{ip_ver.upper()}]")
 
     def _load_test_config(self, script_dir):
         config_file = os.path.join(script_dir, "test_config.csv")
+
+        def _clean_csv_value(value, fallback=""):
+            if pd.isna(value):
+                return fallback
+
+            value = str(value).strip()
+
+            if value.lower() in ("nan", "none", "null", ""):
+                return fallback
+
+            return value
+
         if os.path.exists(config_file):
             try:
-                cfg             = pd.read_csv(config_file).iloc[0]
-                target_clean    = str(cfg.get("target_clean",    self._get_target_clean()))
-                target_ip       = str(cfg.get("target_ip",       target_clean))
-                source_range    = str(cfg.get("source_range",    self._get_source_range()))
-                ip_pool_count   = str(cfg.get("ip_pool_count",   ""))
-                ip_pool_range   = str(cfg.get("ip_pool_range",   ""))
-                interface       = str(cfg.get("interface",       self.get("interface")))
-                reach_src_ip       = str(cfg.get("reach_src_ip",    self.get("reach_src_ip")))
-                request_threshold = float(cfg.get("request_threshold", self.get("request_threshold") or 1))
-                reach_threshold   = float(cfg.get("reach_threshold",   self.get("reach_threshold") or 5))
-                test_type_cfg     = str(cfg.get("test_type",       self.get("test_type")))
-                processes       = str(cfg.get("processes",       self.get("processes")))
-                stop_timeout    = str(cfg.get("stop_timeout",    self.get("stop_timeout") or "60"))
+                cfg = pd.read_csv(config_file).iloc[0]
+
+                target_clean  = _clean_csv_value(cfg.get("target_clean", ""), self._get_target_clean())
+                target_ip     = _clean_csv_value(cfg.get("target_ip", ""), target_clean)
+                source_range  = _clean_csv_value(cfg.get("source_range", ""), self._get_source_range())
+                ip_pool_count = _clean_csv_value(cfg.get("ip_pool_count", ""), "")
+                ip_pool_range = _clean_csv_value(cfg.get("ip_pool_range", ""), "")
+                interface     = _clean_csv_value(cfg.get("interface", ""), self.get("interface"))
+
+                reach_src_ip       = _clean_csv_value(cfg.get("reach_src_ip", ""), self.get("reach_src_ip") or self._get_ip_start())
+                reach_interface    = _clean_csv_value(cfg.get("reach_interface", ""), self.get("reach_interface") or self.get("interface"))
+                reach_interval_cfg = _clean_csv_value(cfg.get("reach_interval", ""), self.get("reach_interval") or "5")
+                reach_timeout_cfg  = _clean_csv_value(cfg.get("reach_timeout", ""), self.get("reach_timeout") or "5")
+
+                src_ports = _clean_csv_value(cfg.get("src_ports", ""), "")
+
+                request_threshold = float(
+                    _clean_csv_value(cfg.get("request_threshold", ""), self.get("request_threshold") or "1")
+                )
+                reach_threshold = float(
+                    _clean_csv_value(cfg.get("reach_threshold", ""), self.get("reach_threshold") or "5")
+                )
+
+                test_type_cfg = _clean_csv_value(cfg.get("test_type", ""), self.get("test_type"))
+                processes     = _clean_csv_value(cfg.get("processes", ""), self.get("processes"))
+                stop_timeout  = _clean_csv_value(cfg.get("stop_timeout", ""), self.get("stop_timeout") or "60")
+
+                http_method = _clean_csv_value(cfg.get("http_method", ""), self.get("http_method") or "GET")
+                endpoint_path = normalize_endpoint_paths(
+                    _clean_csv_value(cfg.get("endpoint_path", ""), self.get("endpoint_path") or "/")
+                )
+                connect_timeout = _clean_csv_value(cfg.get("connect_timeout", ""), self.get("connect_timeout") or "5")
+                read_timeout    = _clean_csv_value(cfg.get("read_timeout", ""), self.get("read_timeout") or "15")
+
                 self.write_log(
                     f"✓ Params: {target_clean} | {source_range} | "
                     f"request_threshold={request_threshold}% | reach_threshold={reach_threshold}%"
                 )
-                return (target_clean, target_ip, source_range, interface,
-                        request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
-                        reach_src_ip, ip_pool_count, ip_pool_range)
+
+                return (
+                    target_clean, target_ip, source_range, interface,
+                    request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
+                    reach_src_ip, ip_pool_count, ip_pool_range,
+                    http_method, endpoint_path, connect_timeout, read_timeout,
+                    src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface
+                )
+
             except Exception as e:
                 self.write_log(f"⚠ Error reading config: {e}")
+
         return (
             self._get_target_clean(),
             self._get_target_clean(),
@@ -2267,8 +2535,15 @@ class LocustGUI(ctk.CTk):
             self.get("reach_src_ip") or self._get_ip_start(),
             "0",
             "",
+            self.get("http_method") or "GET",
+            normalize_endpoint_paths(self.get("endpoint_path") or "/"),
+            self.get("connect_timeout") or "5",
+            self.get("read_timeout") or "15",
+            self.get("src_ports") or "",
+            self.get("reach_interval") or "5",
+            self.get("reach_timeout") or "5",
+            self.get("reach_interface") or self.get("interface"),
         )
-
     # ================================================================
     # SETUP
     # ================================================================
@@ -2296,6 +2571,7 @@ class LocustGUI(ctk.CTk):
         try:
             self.write_log("=" * 60)
             self.write_log("▶ SETUP – Adding IPs to interface...")
+
             ip_ver      = self._active_ip_version()
             prefix_len  = self._get_prefix_len()
             custom_file = self._custom_pool_entry.get().strip()
@@ -2308,22 +2584,26 @@ class LocustGUI(ctk.CTk):
                     self.write_log(
                         f"📋 Existing ip_pool.txt: {len(existing_entries)} IPs (will be preserved)"
                     )
-                    
+
             tmp_pool = pool_path + ".new"
 
             if custom_file:
                 if not os.path.exists(custom_file):
                     self.write_log(f"✗ Custom pool file not found: {custom_file}")
                     return
+
                 entries = parse_pool_lines(custom_file)
                 if not entries:
                     self.write_log("✗ Custom pool file is empty")
                     return
+
                 ip_list      = [ip for ip, _ in entries]
                 first_prefix = entries[0][1] if entries[0][1] else prefix_len
+
                 self.write_log(
                     f"📂 Custom pool: {len(ip_list)} IPs, prefix=/{first_prefix} loaded"
                 )
+
                 create_pool(
                     ip_start    = ip_list[0],
                     ip_end      = ip_list[-1],
@@ -2333,25 +2613,45 @@ class LocustGUI(ctk.CTk):
                     ip_list     = ip_list,
                     prefix_len  = first_prefix,
                 )
+
                 self.write_log(f"✓ New IPs generated from custom file [{ip_ver.upper()}]")
+
             else:
+                generated_ip_list = self._get_ip_list(existing_entries)
+
+                if ip_ver == "ipv6" and self.ipv6_mode.get() == "prefix":
+                    if not generated_ip_list:
+                        self.write_log("✗ No available IPv6 addresses found in selected prefix")
+                        return
+
+                    self.write_log(
+                        f"ℹ IPv6 prefix mode: generated next block of "
+                        f"{len(generated_ip_list)} unused IP addresses"
+                    )
+
                 create_pool(
-                    ip_start    = self._get_ip_start(),
-                    ip_end      = self._get_ip_end(),
+                    ip_start    = generated_ip_list[0] if generated_ip_list else self._get_ip_start(),
+                    ip_end      = generated_ip_list[-1] if generated_ip_list else self._get_ip_end(),
                     interface   = self.get("interface"),
                     output_file = tmp_pool,
                     ip_version  = ip_ver,
-                    ip_list     = self._get_ip_list(),
+                    ip_list     = generated_ip_list,
                     prefix_len  = prefix_len,
                 )
+
                 self.write_log(f"✓ New IPs generated [{ip_ver.upper()}]")
 
             self._rewrite_pool_with_prefix(tmp_pool, prefix_len)
             new_entries = parse_pool_lines(tmp_pool) if os.path.exists(tmp_pool) else []
 
-            merged, added = self._merge_pool_entries(existing_entries, new_entries, prefix_len)
+            merged, added = self._merge_pool_entries(
+                existing_entries,
+                new_entries,
+                prefix_len
+            )
 
             self._write_pool_file(pool_path, merged, prefix_len)
+
             try:
                 os.remove(tmp_pool)
             except OSError:
@@ -2363,6 +2663,7 @@ class LocustGUI(ctk.CTk):
             )
             self.write_log("✓ SETUP COMPLETE")
             self.write_log("=" * 60)
+
         except Exception as e:
             self.write_log(f"✗ Setup error: {e}")
 
@@ -2453,7 +2754,7 @@ class LocustGUI(ctk.CTk):
                 self.write_log("✗ No valid stages — check Duration/Users/Spawn rate fields")
                 return
 
-            run_time = stages[-1]["duration"]
+            run_time = sum(int(s.get("duration", 0)) for s in stages)
             interval = int(self.get("reach_interval") or 5)
 
             self._save_port_pool()
@@ -2533,6 +2834,8 @@ class LocustGUI(ctk.CTk):
     def _run_reachability(self, duration, interval):
         self._reach_stop_event.clear()
         try:
+            reach_interface = self.get("reach_interface") or self.get("interface")
+
             run_reachability_check(
                 source_ip  = self.get("reach_src_ip") or self._get_ip_start(),
                 url        = self.get("target"),
@@ -2541,6 +2844,7 @@ class LocustGUI(ctk.CTk):
                 timeout    = float(self.get("reach_timeout") or 5),
                 csv_file   = os.path.join(DATA_DIR, "reachability.csv"),
                 stop_event = self._reach_stop_event,
+                interface  = reach_interface,
             )
         except Exception as e:
             self.write_log(f"✗ Reachability error: {e}")
@@ -2556,7 +2860,9 @@ class LocustGUI(ctk.CTk):
         try:
             (target_clean, target_ip, source_range, interface,
              request_threshold, reach_threshold, test_type_cfg, processes, stop_timeout,
-             reach_src_ip, ip_pool_count, ip_pool_range) = self._load_test_config(BASE_DIR)
+             reach_src_ip, ip_pool_count, ip_pool_range,
+             http_method, endpoint_path, connect_timeout, read_timeout,
+             src_ports, reach_interval_cfg, reach_timeout_cfg, reach_interface) = self._load_test_config(BASE_DIR)
 
             report_name = self._report_name_entry.get().strip() or "Locust_Report"
             if not report_name.endswith(".pdf"):
@@ -2588,13 +2894,21 @@ class LocustGUI(ctk.CTk):
                 request_threshold = request_threshold / 100,
                 reach_threshold = reach_threshold / 100,
                 test_type       = test_type_cfg,
-                src_ports       = self.get("src_ports") or None,
-                reach_src_ip    = self.get("reach_src_ip") or self._get_ip_start(),
-                reach_timeout = float(self.get("reach_timeout") or 5),
-                sign            = sign,
-                p12_path        = p12_path,
-                p12_pass        = p12_pass,
-                include_failures=include_failures,
+                src_ports       = src_ports or None,
+                http_method     = http_method,
+                endpoint_path   = endpoint_path,
+                processes       = processes,
+                stop_timeout    = stop_timeout,
+                connect_timeout = connect_timeout,
+                read_timeout    = read_timeout,
+                reach_interval  = reach_interval_cfg,
+                reach_timeout   = float(reach_timeout_cfg),
+                reach_src_ip    = reach_src_ip,
+                reach_interface = reach_interface,
+                include_failures = include_failures,
+                sign             = sign,
+                p12_path         = p12_path,
+                p12_pass         = p12_pass,
             )
             self.write_log(f"✓ {report_name} generated → {save_dir}")
             self.write_log("=" * 60)

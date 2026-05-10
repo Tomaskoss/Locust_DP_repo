@@ -56,6 +56,7 @@ class NetworkMonitor:
             self.running = False
             return
 
+        prev_time = time.time()
         flush_counter = 0
 
         try:
@@ -63,43 +64,50 @@ class NetworkMonitor:
                 writer = csv.writer(csvfile)
                 writer.writerow(["timestamp", "rx_total", "tx_total",
                                  "rx_kbps", "tx_kbps"])
-                writer.writerow([int(time.time()), prev_rx, prev_tx, 0.0, 0.0])
+                writer.writerow([int(prev_time), prev_rx, prev_tx, 0.0, 0.0])
                 csvfile.flush()
 
                 while not self._stop_event.is_set():
-                    # — okamžitá reakcia na stop(), bez čakania celý interval
+                    # okamžitá reakcia na stop(), bez čakania celý interval
                     if self._stop_event.wait(timeout=self.interval):
                         break
 
+                    current_time = time.time()
                     rx_total, tx_total = self.read_net_dev()
-                    actual_elapsed     = self.interval   # čas merania = interval
 
-                    #  — reset prev pri zlyhaní, zabráni spike v dátach
+                    # reset prev pri zlyhaní, zabráni spike v dátach
                     if rx_total is None:
                         prev_rx, prev_tx = None, None
+                        prev_time = current_time
                         continue
 
                     if prev_rx is None:
                         prev_rx, prev_tx = rx_total, tx_total
+                        prev_time = current_time
                         continue
 
-                    #  — counter overflow (uint64 wrap-around)
+                    actual_elapsed = max(1e-6, current_time - prev_time)
+
+                    # counter overflow (uint64 wrap-around)
                     UINT64_MAX = (1 << 64)
                     rx_diff = (rx_total + UINT64_MAX - prev_rx) if rx_total < prev_rx else rx_total - prev_rx
                     tx_diff = (tx_total + UINT64_MAX - prev_tx) if tx_total < prev_tx else tx_total - prev_tx
-
-                    #  zabraňuje ZeroDivisionError pri jitter / malý interval
-                    actual_elapsed = max(1e-6, actual_elapsed)
 
                     rx_kBps = rx_diff / 1024 / actual_elapsed
                     tx_kBps = tx_diff / 1024 / actual_elapsed
 
                     prev_rx, prev_tx = rx_total, tx_total
+                    prev_time = current_time
 
-                    writer.writerow([int(time.time()), rx_total, tx_total,
+                    writer.writerow([int(current_time), rx_total, tx_total,
                                      round(rx_kBps, 3), round(tx_kBps, 3)])
 
-                csvfile.flush()  
+                    flush_counter += 1
+                    if flush_counter % 5 == 0:
+                        csvfile.flush()
+
+                csvfile.flush()
+
         except Exception as e:
             print(f"Error in monitoring loop: {e}")
             self.running = False

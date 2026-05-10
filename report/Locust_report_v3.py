@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import matplotlib
 matplotlib.use('Agg')
-
-import os
+import os as _os
+import os 
 import sys
 import pandas as pd
 import json
@@ -217,57 +217,71 @@ def add_stages_table(story, S, base_dir):
     stages_path = os.path.join(base_dir, "stages.json")
     if not os.path.exists(stages_path):
         return
+
     try:
         with open(stages_path) as f:
             stages = json.load(f)
+
         if not stages:
             return
 
-        S_head = ParagraphStyle("sh", fontSize=9, textColor=colors.white,
-                                 fontName="Helvetica-Bold", alignment=TA_CENTER)
-        S_cell = ParagraphStyle("sc", fontSize=9, textColor=C_TEXT,
-                                 alignment=TA_CENTER, leading=12)
+        S_head = ParagraphStyle(
+            "sh",
+            fontSize=9,
+            textColor=colors.white,
+            fontName="Helvetica-Bold",
+            alignment=TA_CENTER
+        )
+
+        S_cell = ParagraphStyle(
+            "sc",
+            fontSize=9,
+            textColor=C_TEXT,
+            alignment=TA_CENTER,
+            leading=12
+        )
 
         rows = [[
-            Paragraph("Stage",           S_head),
-            Paragraph("Duration (s)",    S_head),
-            Paragraph("Users",           S_head),
-            Paragraph("Spawn Rate",      S_head),
-            Paragraph("Cumulative Time", S_head),
+            Paragraph("Stage",              S_head),
+            Paragraph("Stage Duration (s)", S_head),
+            Paragraph("Users",              S_head),
+            Paragraph("Spawn Rate",         S_head),
+            Paragraph("Time Interval",      S_head),
         ]]
 
+        cumulative_start = 0
+
         for i, stage in enumerate(stages, 1):
-            duration   = int(stage.get("duration",   0))
-            users      = int(stage.get("users",      0))
+            duration   = int(stage.get("duration", 0))
+            users      = int(stage.get("users", 0))
             spawn_rate = int(stage.get("spawn_rate", 0))
-            m, s = divmod(duration, 60)
-            h, m = divmod(m, 60)
-            if h > 0:
-                cum_str = f"{h}h {m}m {s}s"
-            elif m > 0:
-                cum_str = f"{m}m {s}s"
-            else:
-                cum_str = f"{s}s"
+
+            cumulative_end = cumulative_start + duration
+            interval_str = f"{cumulative_start}–{cumulative_end} s"
 
             rows.append([
                 Paragraph(str(i),          S_cell),
                 Paragraph(str(duration),   S_cell),
                 Paragraph(str(users),      S_cell),
                 Paragraph(str(spawn_rate), S_cell),
-                Paragraph(cum_str,         S_cell),
+                Paragraph(interval_str,    S_cell),
             ])
 
+            cumulative_start = cumulative_end
+
         col_w = (PAGE_W - 2 * MARGIN) / 5
+
         t = Table(rows, colWidths=[col_w] * 5)
+
         t.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, 0), C_PRIMARY_DARK),
-            ("ROWBACKGROUNDS",(0, 1), (-1,-1), [C_WHITE, C_ROW_ALT]),
-            ("GRID",          (0, 0), (-1,-1), 0.4, C_BORDER),
-            ("LEFTPADDING",   (0, 0), (-1,-1), 6),
-            ("RIGHTPADDING",  (0, 0), (-1,-1), 6),
-            ("TOPPADDING",    (0, 0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1,-1), 5),
-            ("VALIGN",        (0, 0), (-1,-1), "MIDDLE"),
+            ("BACKGROUND",     (0, 0), (-1, 0), C_PRIMARY_DARK),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+            ("GRID",           (0, 0), (-1, -1), 0.4, C_BORDER),
+            ("LEFTPADDING",    (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
+            ("TOPPADDING",     (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+            ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
         ]))
 
         story.append(ColorBand("  Test Stages"))
@@ -585,13 +599,14 @@ def add_final_availability_summary_chart(story, reach_df=None, success=None, fai
     p_summary = os.path.join(REPORT_DIR, "chart_availability_summary.png")
 
     if reach_df is not None and not reach_df.empty:
-        # only http200
-        reachable = int((reach_df["status_code"] == 200).sum())
+        # Reachable = any successful HTTP 2xx response
+        reachable_mask = (
+            (reach_df["status_code"] >= 200) &
+            (reach_df["status_code"] < 300)
+        )
 
-        # 2xx as reachable:
-        # reachable = int(((reach_df["status_code"] >= 200) & (reach_df["status_code"] < 300)).sum())
-
-        unreachable = int(len(reach_df) - reachable)
+        reachable = int(reachable_mask.sum())
+        unreachable = int((~reachable_mask).sum())
         total = len(reach_df)
         source_note = f"Based on reachability probes ({total} probes)."
     else:
@@ -1219,27 +1234,33 @@ def create_pdf_report(stats_file, history_file, output_file,
                       reach_timeout=None,
                       comment=None, request_failure_threshold=None,
                       target_ip=None, source_ip=None, interface=None,
-                      request_threshold=0.01, reach_threshold=0.05, test_type=None,
+                      request_threshold=None, reach_threshold=None, test_type=None,
                       src_ports=None, reach_src_ip=None,
-                      ip_pool_count=None, ip_pool_range=None, include_failures=False,
+                      reach_interface=None, reach_interval=None,
+                      ip_pool_count=None, ip_pool_range=None,
+                      http_method=None, endpoint_path=None,
+                      processes=None, stop_timeout=None,
+                      connect_timeout=None, read_timeout=None,
+                      include_failures=False,
                       sign=False, p12_path=None, p12_pass=b"yourpassword"):
-
+                      
+    if load_dotenv is not None:
+        load_dotenv(os.path.join(BASE_DIR, "config.env"), override=True)
     if meta_file    is None: meta_file    = META_FILE
     if network_file is None: network_file = NETWORK_FILE
     if reach_file   is None: reach_file   = REACH_FILE        
     if reach_timeout is None:
         try:
-            import os as _os
             _rt = _os.getenv("REACH_TIMEOUT")
             reach_timeout = float(_rt) if _rt else None
         except Exception:
             reach_timeout = None
 
-        # ── Threshold normalization ───────────────────────────────────
+    # ── Threshold normalization ───────────────────────────────────
     # Internally thresholds are stored as fractions:
-    # 1%  -> 0.01
-    # 5%  -> 0.05
-    # GUI/env values may come either as 1 / 5 or as 0.01 / 0.05.
+    # 1% -> 0.01
+    # 5% -> 0.05
+    # Values may come either as 1 / 5 or as 0.01 / 0.05.
     def _threshold_to_fraction(value, default_fraction):
         try:
             v = float(value)
@@ -1249,46 +1270,24 @@ def create_pdf_report(stats_file, history_file, output_file,
         except Exception:
             return default_fraction
 
-    # Request failure threshold applies only to Locust request failures.
-    request_threshold = _threshold_to_fraction(request_threshold, 0.01)
-
+    # Prefer values passed from test_config.csv snapshot.
+    # Use config.env only as fallback.
     if request_failure_threshold is not None:
-        request_threshold = _threshold_to_fraction(
-            request_failure_threshold,
-            request_threshold
-        )
+        request_threshold = _threshold_to_fraction(request_failure_threshold, 0.01)
+    elif request_threshold is not None:
+        request_threshold = _threshold_to_fraction(request_threshold, 0.01)
     else:
-        env_req_threshold = os.getenv("REQUEST_FAILURE_THRESHOLD")
-        if env_req_threshold not in (None, ""):
-            request_threshold = _threshold_to_fraction(
-                env_req_threshold,
-                request_threshold
-            )
-
-    # Reachability threshold applies only to reachability probes.
-    reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
-
-    env_reach_threshold = (
-        os.getenv("REACHABILITY_FAILURE_THRESHOLD")
-        or os.getenv("REACH_THRESHOLD")
-    )
-    if env_reach_threshold not in (None, ""):
-        reach_threshold = _threshold_to_fraction(
-            env_reach_threshold,
-            reach_threshold
+        request_threshold = _threshold_to_fraction(
+            os.getenv("REQUEST_FAILURE_THRESHOLD"),
+            0.01
         )
 
-    # Reachability threshold applies only to reachability probes.
-    reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
-
-    env_reach_threshold = (
-        os.getenv("REACHABILITY_FAILURE_THRESHOLD")
-        or os.getenv("REACH_THRESHOLD")
-    )
-    if env_reach_threshold not in (None, ""):
+    if reach_threshold is not None:
+        reach_threshold = _threshold_to_fraction(reach_threshold, 0.05)
+    else:
         reach_threshold = _threshold_to_fraction(
-            env_reach_threshold,
-            reach_threshold
+            os.getenv("REACHABILITY_FAILURE_THRESHOLD") or os.getenv("REACH_THRESHOLD"),
+            0.05
         )
 
     if not os.path.exists(stats_file):
@@ -1328,16 +1327,43 @@ def create_pdf_report(stats_file, history_file, output_file,
         used_ips = "Unknown"
 
     ip_version = "IPv6" if (source_ip and ":" in source_ip) else "IPv4"
-    http_method = os.getenv("HTTP_METHOD", "GET").strip().upper()
-    endpoint_path = os.getenv("ENDPOINT_PATH", "/").strip()
+        # HTTP/Locust parameters used during the test.
+    # Prefer values passed from test_config.csv snapshot.
+    # Fallback to config.env only if the snapshot value is missing.
+    http_method = str(
+        http_method or os.getenv("HTTP_METHOD", "GET")
+    ).strip().upper()
+
+    endpoint_path = str(
+        endpoint_path or os.getenv("ENDPOINT_PATH", "/")
+    ).strip()
 
     if not endpoint_path:
         endpoint_path = "/"
-           # Locust parameters used during the test
-    stop_timeout = os.getenv("STOP_TIMEOUT", "Unknown").strip()
-    connect_timeout = os.getenv("CONNECT_TIMEOUT", "Unknown").strip()
-    read_timeout = os.getenv("READ_TIMEOUT", "Unknown").strip()
-    processes = os.getenv("PROCESSES", "Unknown").strip()
+
+    stop_timeout = str(
+        stop_timeout or os.getenv("STOP_TIMEOUT", "Unknown")
+    ).strip()
+
+    connect_timeout = str(
+        connect_timeout or os.getenv("CONNECT_TIMEOUT", "Unknown")
+    ).strip()
+
+    read_timeout = str(
+        read_timeout or os.getenv("READ_TIMEOUT", "Unknown")
+    ).strip()
+
+    processes = str(
+        processes or os.getenv("PROCESSES", "Unknown")
+    ).strip()
+    
+    reach_interval = str(
+        reach_interval or os.getenv("REACH_INTERVAL", "Unknown")
+        ).strip()
+
+    reach_interface = str(
+        reach_interface or os.getenv("REACH_INTERFACE", "Unknown")
+    ).strip()
 
     def _fmt_seconds(value):
         if value in (None, "", "Unknown"):
@@ -1401,6 +1427,10 @@ def create_pdf_report(stats_file, history_file, output_file,
     # ── TEST INFORMATION ──────────────────────────────────────────
     story.append(ColorBand("  Test Information"))
     story.append(Spacer(1, 8))
+    source_ports_display = str(src_ports).strip() if src_ports else ""
+
+    if source_ports_display.lower() in ("nan", "none", "null", ""):
+        source_ports_display = _get_os_port_range()
     story.append(make_info_table([
         [Paragraph("Test Type",         S["label"]), Paragraph(display_test_type,              S["value"])],
         [Paragraph("HTTP Method",       S["label"]), Paragraph(str(http_method),               S["value"])],
@@ -1411,10 +1441,13 @@ def create_pdf_report(stats_file, history_file, output_file,
         [Paragraph("Start Time",        S["label"]), Paragraph(str(start_time),                S["value"])],
         [Paragraph("End Time",          S["label"]), Paragraph(str(end_time),                  S["value"])],
         [Paragraph("Duration",          S["label"]), Paragraph(duration,                       S["value"])],
-        [Paragraph("Used IP range",     S["label"]), Paragraph(str(used_ips),                  S["value"])],
         [Paragraph("IP Pool range",     S["label"]), Paragraph(str(ip_pool_range) if ip_pool_range else str(used_ips), S["value"])],
         [Paragraph("IP Pool count",     S["label"]), Paragraph(str(ip_pool_count) if ip_pool_count else "Unknown", S["value"])],
-        [Paragraph("Source ports",      S["label"]), Paragraph(str(src_ports) if src_ports else _get_os_port_range(), S["value"])],
+        [Paragraph("Source ports",      S["label"]), Paragraph(source_ports_display, S["value"])],
+        [Paragraph("Reachability source IP", S["label"]), Paragraph(str(reach_src_ip) if reach_src_ip else "Unknown", S["value"])],
+        [Paragraph("Reachability interface", S["label"]), Paragraph(str(reach_interface), S["value"])],
+        [Paragraph("Reachability interval",  S["label"]), Paragraph(_fmt_seconds(reach_interval), S["value"])],
+        [Paragraph("Reachability timeout",   S["label"]), Paragraph(_fmt_seconds(reach_timeout), S["value"])],
         [Paragraph("Stop timeout",      S["label"]), Paragraph(_fmt_seconds(stop_timeout), S["value"])],
         [Paragraph("Connect timeout",   S["label"]), Paragraph(_fmt_seconds(connect_timeout), S["value"])],
         [Paragraph("Read timeout",      S["label"]), Paragraph(_fmt_seconds(read_timeout), S["value"])],
