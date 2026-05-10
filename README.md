@@ -520,6 +520,17 @@ Certifikáty a súkromné kľúče sa nemajú ukladať do verejného repozitára
 
 ---
 
+## 🐛 Riešenie problémov
+
+| Problém | Možná príčina | Riešenie |
+|---|---|---|
+| `ModuleNotFoundError` | Chýbajú Python závislosti | Spustiť `prepare_tester_python.sh` |
+| PDF sa negeneruje | Chýbajú CSV dáta | Najprv spustiť test |
+| IPv6 ConnectTimeout | Nesprávny source IP pool | Použiť IP adresy z rovnakej siete ako server |
+| Ping funguje, ale test nie | Problém s URL, portom alebo endpointom | Overiť `curl`, firewall a server |
+| Source ports v reporte sú prázdne | Pole nebolo vyplnené | Použijú sa OS ephemeral porty |
+| Link-local IPv6 nefunguje | Chýba interface scope | Použiť zápis `%25ens33` v URL |
+
 ### IPv6 príklad
 
 Nesprávne:
