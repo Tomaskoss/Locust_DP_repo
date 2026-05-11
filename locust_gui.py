@@ -13,6 +13,7 @@ import socket
 import shutil
 import pandas as pd
 import csv
+import signal
 import glob
 import json
 from collections import defaultdict
@@ -207,6 +208,8 @@ ZOOM_STEP = 0.1
 # ============================================================
 #  HELPERS
 # ============================================================
+
+
 
 def darken(hex_color, amount=40):
     hex_color = str(hex_color).lstrip("#")
@@ -605,6 +608,7 @@ class LocustGUI(ctk.CTk):
         self.destroy()
         app = LocustGUI(initial_theme=theme_name)
         app.mainloop()
+        
 
     # ================================================================
     # ENV LOAD / SAVE
@@ -2713,13 +2717,14 @@ class LocustGUI(ctk.CTk):
 
     def _set_stop_enabled(self, enabled):
         self._stop_enabled = enabled
+
         if enabled:
             self.runbtn.configure(
                 fg_color="#B7950B",
                 hover_color="#B7950B",
                 text="⏳ Running...",
                 text_color="white",
-                state="normal",
+                state="disabled",
                 command=lambda: None
             )
             self.stopbtn.configure(
@@ -2729,6 +2734,7 @@ class LocustGUI(ctk.CTk):
                 state="normal",
                 command=self.stop_locust
             )
+
         else:
             self.runbtn.configure(
                 fg_color=C_SUCCESS,
@@ -2742,7 +2748,7 @@ class LocustGUI(ctk.CTk):
                 fg_color="#3a3a3a",
                 hover_color="#3a3a3a",
                 text_color="#aaaaaa",
-                state="normal",
+                state="disabled",
                 command=lambda: None
             )
 
@@ -2794,8 +2800,12 @@ class LocustGUI(ctk.CTk):
             self.write_log("-" * 60)
 
             self.locust_process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, cwd=BASE_DIR
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True
             )
             for line in self.locust_process.stdout:
                 line = line.rstrip()
@@ -2821,15 +2831,83 @@ class LocustGUI(ctk.CTk):
                 self._network_monitor = None
                 self.write_log("📡 Network monitor stopped")
             self._set_stop_enabled(False)
+            
+    # ================================================================
+    # terminate process
+    # ================================================================
+        
+    def _terminate_process_group(self, process, name="process", timeout=5):
+        """
+        Terminates a process and all child processes in its process group.
+        This is needed for Locust when running with --processes -1.
+        """
+        if process is None:
+            return
+
+        if process.poll() is not None:
+            return
+
+        try:
+            pgid = os.getpgid(process.pid)
+            self.write_log(f"⏹ Stopping {name} process group PID={process.pid}, PGID={pgid}")
+
+            os.killpg(pgid, signal.SIGTERM)
+
+            try:
+                process.wait(timeout=timeout)
+                self.write_log(f"✓ {name} stopped")
+                return
+            except subprocess.TimeoutExpired:
+                self.write_log(f"⚠ {name} did not stop in {timeout}s, killing process group")
+                os.killpg(pgid, signal.SIGKILL)
+                process.wait(timeout=3)
+                self.write_log(f"✓ {name} killed")
+
+        except ProcessLookupError:
+            self.write_log(f"ℹ {name} already stopped")
+
+        except Exception as e:
+            self.write_log(f"⚠ Could not stop {name} process group: {e}")
+
+            try:
+                process.terminate()
+                process.wait(timeout=timeout)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
 
     def stop_locust(self):
         if not self._stop_enabled:
             return
-        if self.locust_process and self.locust_process.poll() is None:
-            self.locust_process.terminate()
-            self.write_log("⛔ Locust test stopped by user")
+
+        self.write_log("⛔ Stop requested by user")
+
+        # Stop reachability thread
+        try:
             self._reach_stop_event.set()
+        except Exception:
+            pass
+
+        # Stop Locust master + all worker processes
+        self._terminate_process_group(
+            self.locust_process,
+            name="Locust",
+            timeout=5
+        )
+
+        # Stop network monitor immediately as well
+        try:
+            if self._network_monitor:
+                self._network_monitor.stop()
+                self._network_monitor = None
+                self.write_log("📡 Network monitor stopped")
+        except Exception as e:
+            self.write_log(f"⚠ Network monitor stop error: {e}")
+
         self._set_stop_enabled(False)
+        self.write_log("✓ Test stopped by user")
 
     def _run_reachability(self, duration, interval):
         self._reach_stop_event.clear()

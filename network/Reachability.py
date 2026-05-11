@@ -4,6 +4,7 @@ import requests
 import time
 import csv
 import threading
+import urllib3
 from urllib.parse import urlparse, urlunparse
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
@@ -19,6 +20,9 @@ URL       = os.getenv("TARGET_HOST",     "https://www.vut.cz")
 INTERVAL  = int(os.getenv("REACH_INTERVAL", 5))
 DURATION  = int(os.getenv("RUN_TIME", 10))
 TIMEOUT   = float(os.getenv("REACH_TIMEOUT",  5))   
+SSL_VERIFY = str(os.getenv("SSL_VERIFY", "false")).strip().lower() in (
+    "1", "true", "yes", "on"
+)
 
 
 # ============================================================
@@ -143,7 +147,7 @@ class SourceIPAdapter(HTTPAdapter):
 
 def run(source_ip=SOURCE_IP, url=URL, interval=INTERVAL,
         duration=DURATION, timeout=TIMEOUT, csv_file=CSV_FILE,
-        stop_event=None, interface=None):
+        stop_event=None, interface=None, ssl_verify=SSL_VERIFY):
     """
     Spustí reachability check zo zdrojovej IP voči URL.
     Výsledky ukladá do CSV súboru.
@@ -156,6 +160,8 @@ def run(source_ip=SOURCE_IP, url=URL, interval=INTERVAL,
 
     interface = interface.strip() if interface else None
     url = add_scope_to_link_local_url(url, interface)
+    if not ssl_verify:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     if stop_event is None:
         stop_event = threading.Event()
@@ -174,7 +180,7 @@ def run(source_ip=SOURCE_IP, url=URL, interval=INTERVAL,
     iface_text = interface if interface else "auto"
     print(f"Reachability check | src: {source_ip} ({ip_ver}) | iface: {iface_text} -> {url}")
     print(f"Interval: {interval}s | Duration: {duration}s | "
-          f"Timeout: {timeout}s | CSV: {csv_file}")
+          f"Timeout: {timeout}s | SSL verify: {ssl_verify} | CSV: {csv_file}")
     print("-" * 60)
 
     flush_counter = 0
@@ -195,7 +201,7 @@ def run(source_ip=SOURCE_IP, url=URL, interval=INTERVAL,
                 error_msg      = ""
 
                 try:
-                    r       = session.get(url, timeout=timeout)
+                    r       = session.get(url, timeout=timeout,verify=ssl_verify)
                     elapsed = round(time.time() - t0, 4)
                     status  = r.status_code
                 except Exception as e:
