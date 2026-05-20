@@ -689,6 +689,7 @@ class LocustGUI(ctk.CTk):
             "CONNECT_TIMEOUT": self.get("connect_timeout") or "5",
             "READ_TIMEOUT":    self.get("read_timeout") or "15",
             "SSL_VERIFY":      "true" if self._ssl_verify_var.get() else "false",
+            "ACCEPT_ENCODING": "identity" if self._disable_compression_var.get() else "",
             "REACH_INTERVAL":  self.get("reach_interval"),
             "REACH_TIMEOUT":   self.get("reach_timeout"),
             "REACH_SRC_IP":    self.get("reach_src_ip"),
@@ -972,6 +973,43 @@ class LocustGUI(ctk.CTk):
         CTkToolTip(ssl_cb,
                    message="When disabled, HTTPS requests do not verify the server certificate.\nUseful for testing self-signed certificates",
                    delay=0.3, x_offset=10, y_offset=-10)
+        # Disable compression checkbox
+        self._disable_compression_var = ctk.BooleanVar(
+            value=os.getenv("ACCEPT_ENCODING", "").strip().lower() == "identity"
+        )
+
+        compression_cb = ctk.CTkCheckBox(
+            card,
+            text="Disable compression",
+            variable=self._disable_compression_var,
+            font=ctk.CTkFont(size=13),
+            text_color=C_TEXT,
+            fg_color=C_ACTIVE,
+            hover_color=C_HOVER,
+            border_color=C_MUTED,
+        )
+
+        compression_cb.grid(
+            row=3,
+            column=2,
+            columnspan=2,
+            padx=(16, 8),
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        CTkToolTip(
+            compression_cb,
+            message=(
+                "Sends Accept-Encoding: identity.\n"
+                "Use this when measuring real network throughput.\n"
+                "When disabled, the server may return compressed responses."
+            ),
+            delay=0.3,
+            x_offset=10,
+            y_offset=-10
+        )
+
 
         # ── IP Pool ───────────────────────────────────────────────
         row = self._card_header(scroll, "IP Pool", row)
