@@ -139,6 +139,7 @@ def load_endpoint_paths():
 # ============================================================
 #  HELPER FUNCTIONS
 # ============================================================
+
 def load_request_body():
     raw = os.getenv("REQUEST_BODY", "").strip()
 
@@ -521,6 +522,9 @@ class MyUser(HttpUser):
             "catch_response": True,
             "timeout": (CONNECT_TIMEOUT, READ_TIMEOUT),
             "name": f"{method} {endpoint}",
+            "headers": {
+            "Accept-Encoding": "identity"
+            },
         }
 
         if method == "POST":

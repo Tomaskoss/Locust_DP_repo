@@ -1006,80 +1006,285 @@ def add_reachability_delay_chart(df, story, reach_timeout_s=None):
         print(f"Error creating delay chart: {e}")
         import traceback
         traceback.print_exc()
+        
 def add_network_traffic_charts(network_file, history_file, story):
     if not os.path.exists(network_file):
         print(f"Network file '{network_file}' not found, charts skipped")
         return
+
     try:
         network_df = pd.read_csv(network_file, on_bad_lines='skip')
         network_df = network_df[network_df['timestamp'] > 1_000_000_000].copy()
+
+        if network_df.empty:
+            print("Network file is empty after timestamp filtering, charts skipped")
+            return
+
         network_df['timestamp'] = pd.to_datetime(network_df['timestamp'], unit='s')
 
-        p4    = os.path.join(REPORT_DIR, "chart_network_total.png")
-        rx_mb = (network_df['rx_total'] - network_df['rx_total'].iloc[0]) / (1024 * 1024)
-        tx_mb = (network_df['tx_total'] - network_df['tx_total'].iloc[0]) / (1024 * 1024)
-        rx_mb = rx_mb.clip(lower=0)
-        tx_mb = tx_mb.clip(lower=0)
+        # ============================================================
+        # Base values
+        # ============================================================
+
+        # Cumulative transferred data in bytes
+        rx_total_bytes = (
+            pd.to_numeric(network_df["rx_total"], errors="coerce").fillna(0)
+            - pd.to_numeric(network_df["rx_total"], errors="coerce").fillna(0).iloc[0]
+        ).clip(lower=0)
+
+        tx_total_bytes = (
+            pd.to_numeric(network_df["tx_total"], errors="coerce").fillna(0)
+            - pd.to_numeric(network_df["tx_total"], errors="coerce").fillna(0).iloc[0]
+        ).clip(lower=0)
+
+        # Speed: original columns are treated as kB/s, converted to kbit/s
+        rx_speed_kbit_s = pd.to_numeric(network_df['rx_kbps'], errors='coerce').fillna(0) * 8
+        tx_speed_kbit_s = pd.to_numeric(network_df['tx_kbps'], errors='coerce').fillna(0) * 8
+
+        # ============================================================
+        # Automatic unit helpers
+        # ============================================================
+
+        def _safe_max(series):
+            if series is None or len(series) == 0:
+                return 0.0
+            value = pd.to_numeric(series, errors="coerce").fillna(0).max()
+            return float(value) if pd.notna(value) else 0.0
+
+        def _choose_data_unit(bytes_series):
+            max_value = _safe_max(bytes_series)
+
+            if max_value >= 1024 ** 3:
+                return "GB", 1024 ** 3
+            elif max_value >= 1024 ** 2:
+                return "MB", 1024 ** 2
+            else:
+                return "kB", 1024
+
+        def _choose_speed_unit(kbit_series):
+            max_value = _safe_max(kbit_series)
+
+            if max_value >= 1_000_000:
+                return "Gbit/s", 1_000_000
+            elif max_value >= 1_000:
+                return "Mbit/s", 1_000
+            else:
+                return "kbit/s", 1
+
+        def _fmt_number(value):
+            try:
+                v = float(value)
+
+                if v == 0:
+                    return "0.00"
+
+                # Ak je hodnota kladná, ale po zaokrúhlení by vyzerala ako 0.00
+                if abs(v) < 0.01:
+                    return "<0.01"
+
+                return f"{v:,.2f}".replace(",", " ")
+
+            except Exception:
+                return "0.00"
+
+        def _axis_formatter():
+            def _fmt(x, pos):
+                try:
+                    x = float(x)
+                    if abs(x) >= 1000:
+                        return f"{x:,.0f}".replace(",", " ")
+                    elif abs(x) >= 10:
+                        return f"{x:.1f}"
+                    else:
+                        return f"{x:.2f}"
+                except Exception:
+                    return str(x)
+            return ticker.FuncFormatter(_fmt)
+
+        def _stat(series):
+            series = pd.to_numeric(series, errors="coerce").fillna(0)
+            return (
+                series.min() if len(series) > 0 else 0,
+                series.max() if len(series) > 0 else 0,
+                series.mean() if len(series) > 0 else 0,
+            )
+
+        # ============================================================
+        # Choose units
+        # ============================================================
+
+        rx_total_unit, rx_total_div = _choose_data_unit(rx_total_bytes)
+        tx_total_unit, tx_total_div = _choose_data_unit(tx_total_bytes)
+
+        rx_speed_unit, rx_speed_div = _choose_speed_unit(rx_speed_kbit_s)
+        tx_speed_unit, tx_speed_div = _choose_speed_unit(tx_speed_kbit_s)
+
+        rx_total_plot = rx_total_bytes / rx_total_div
+        tx_total_plot = tx_total_bytes / tx_total_div
+
+        rx_speed_plot = rx_speed_kbit_s / rx_speed_div
+        tx_speed_plot = tx_speed_kbit_s / tx_speed_div
+
+        # ============================================================
+        # Total Network Traffic chart
+        # ============================================================
+
+        p4 = os.path.join(REPORT_DIR, "chart_network_total.png")
 
         fig, ax1 = plt.subplots(figsize=(7, 3))
-        ax1.fill_between(network_df['timestamp'], rx_mb, alpha=0.12, color="#1A73E8")
-        ax1.plot(network_df['timestamp'], rx_mb,
-                 color="#1A73E8", linewidth=1.8, label="RX MB")
-        ax1.set_ylabel("Received MB", color="#1A73E8", fontsize=9)
+
+        ax1.fill_between(
+            network_df['timestamp'],
+            rx_total_plot,
+            alpha=0.12,
+            color="#1A73E8"
+        )
+        ax1.plot(
+            network_df['timestamp'],
+            rx_total_plot,
+            color="#1A73E8",
+            linewidth=1.8,
+            label=f"RX {rx_total_unit}"
+        )
+
+        ax1.set_ylabel(f"Received {rx_total_unit}", color="#1A73E8", fontsize=9)
+        ax1.tick_params(axis="y", colors="#1A73E8", labelsize=8)
+        ax1.yaxis.set_major_formatter(_axis_formatter())
+
         ax2 = ax1.twinx()
-        ax2.fill_between(network_df['timestamp'], tx_mb, alpha=0.08, color="#7B2FBE")
-        ax2.plot(network_df['timestamp'], tx_mb,
-                 color="#7B2FBE", linewidth=1.8, label="TX MB")
-        ax2.set_ylabel("Transmitted MB", color="#7B2FBE", fontsize=9)
+
+        ax2.fill_between(
+            network_df['timestamp'],
+            tx_total_plot,
+            alpha=0.08,
+            color="#7B2FBE"
+        )
+        ax2.plot(
+            network_df['timestamp'],
+            tx_total_plot,
+            color="#7B2FBE",
+            linewidth=1.8,
+            label=f"TX {tx_total_unit}"
+        )
+
+        ax2.set_ylabel(f"Transmitted {tx_total_unit}", color="#7B2FBE", fontsize=9)
+        ax2.tick_params(axis="y", colors="#7B2FBE", labelsize=8)
+        ax2.yaxis.set_major_formatter(_axis_formatter())
+        ax2.grid(False)
+
         lines1, l1 = ax1.get_legend_handles_labels()
         lines2, l2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, l1 + l2, fontsize=8, loc="upper left")
+
+        ax1.legend(
+            lines1 + lines2,
+            l1 + l2,
+            fontsize=8,
+            loc="upper left"
+        )
+
         _apply_chart_style(ax1, "Total Network Traffic (Cumulative)")
+
+        ax2.spines["right"].set_visible(True)
+        ax2.spines["right"].set_color("#7B2FBE")
+
         save_chart(p4)
+
         story.append(Image(p4, width=440, height=190))
         story.append(Spacer(1, 10))
 
+        # ============================================================
+        # Network Transfer Speed chart
+        # ============================================================
+
         p5 = os.path.join(REPORT_DIR, "chart_network_speed.png")
-        fig, ax = plt.subplots(figsize=(7, 3))
-        ax.fill_between(network_df['timestamp'], network_df['rx_kbps'],
-                        alpha=0.12, color="#1A73E8")
-        ax.plot(network_df['timestamp'], network_df['rx_kbps'],
-                color="#1A73E8", linewidth=1.8, label="RX kB/s")
-        ax.fill_between(network_df['timestamp'], network_df['tx_kbps'],
-                        alpha=0.08, color="#7B2FBE")
-        ax.plot(network_df['timestamp'], network_df['tx_kbps'],
-                color="#7B2FBE", linewidth=1.8, label="TX kB/s")
-        ax.set_ylabel("Speed (kB/s)")
-        ax.legend(fontsize=8)
-        _apply_chart_style(ax, "Network Transfer Speed")
+
+        fig, ax1 = plt.subplots(figsize=(7, 3))
+
+        ax1.fill_between(
+            network_df['timestamp'],
+            rx_speed_plot,
+            alpha=0.12,
+            color="#1A73E8"
+        )
+        ax1.plot(
+            network_df['timestamp'],
+            rx_speed_plot,
+            color="#1A73E8",
+            linewidth=1.8,
+            label=f"RX {rx_speed_unit}"
+        )
+
+        ax1.set_ylabel(f"RX Speed ({rx_speed_unit})", color="#1A73E8", fontsize=9)
+        ax1.tick_params(axis="y", colors="#1A73E8", labelsize=8)
+        ax1.yaxis.set_major_formatter(_axis_formatter())
+
+        ax2 = ax1.twinx()
+
+        ax2.fill_between(
+            network_df['timestamp'],
+            tx_speed_plot,
+            alpha=0.08,
+            color="#7B2FBE"
+        )
+        ax2.plot(
+            network_df['timestamp'],
+            tx_speed_plot,
+            color="#7B2FBE",
+            linewidth=1.8,
+            label=f"TX {tx_speed_unit}"
+        )
+
+        ax2.set_ylabel(f"TX Speed ({tx_speed_unit})", color="#7B2FBE", fontsize=9)
+        ax2.tick_params(axis="y", colors="#7B2FBE", labelsize=8)
+        ax2.yaxis.set_major_formatter(_axis_formatter())
+        ax2.grid(False)
+
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+
+        ax1.legend(
+            lines1 + lines2,
+            labels1 + labels2,
+            fontsize=8,
+            loc="upper left"
+        )
+
+        _apply_chart_style(ax1, "Network Transfer Speed")
+
+        ax2.spines["right"].set_visible(True)
+        ax2.spines["right"].set_color("#7B2FBE")
+
         save_chart(p5)
+
         story.append(Image(p5, width=440, height=190))
         story.append(Spacer(1, 12))
 
-        rx_kb = ((network_df["rx_total"] - network_df["rx_total"].iloc[0]) / 1024).clip(lower=0)
-        tx_kb = ((network_df["tx_total"] - network_df["tx_total"].iloc[0]) / 1024).clip(lower=0)
-        rx_kb = rx_kb.iloc[1:]
-        tx_kb = tx_kb.iloc[1:]
-        rx_kb = rx_kb[rx_kb > 0]
-        tx_kb = tx_kb[tx_kb > 0]
+        # ============================================================
+        # Statistics for table
+        # ============================================================
 
-        TRANSFER_THRESHOLD_rxs = 1.0
-        TRANSFER_THRESHOLD_txs = 1.0
+        # Remove first zero value and keep only positive values
+        rx_total_nz = rx_total_bytes.iloc[1:]
+        tx_total_nz = tx_total_bytes.iloc[1:]
 
-        rxs_nz = network_df[network_df['rx_kbps'] > TRANSFER_THRESHOLD_rxs]['rx_kbps']
-        txs_nz = network_df[network_df['tx_kbps'] > TRANSFER_THRESHOLD_txs]['tx_kbps']
+        rx_total_nz = rx_total_nz[rx_total_nz > 0] / rx_total_div
+        tx_total_nz = tx_total_nz[tx_total_nz > 0] / tx_total_div
 
-        def _stat(s):
-            return (
-                s.min()  if len(s) > 0 else 0,
-                s.max()  if len(s) > 0 else 0,
-                s.mean() if len(s) > 0 else 0,
-            )
+        # Ignore almost-zero speeds
+        TRANSFER_THRESHOLD_KBIT_S = 8.0
 
-        rx_total_min, rx_total_max, rx_total_avg = _stat(rx_kb)
-        tx_total_min, tx_total_max, tx_total_avg = _stat(tx_kb)
-        rx_spd_min,   rx_spd_max,   rx_spd_avg   = _stat(rxs_nz)
-        tx_spd_min,   tx_spd_max,   tx_spd_avg   = _stat(txs_nz)
+        rxs_nz = rx_speed_kbit_s[rx_speed_kbit_s > TRANSFER_THRESHOLD_KBIT_S] / rx_speed_div
+        txs_nz = tx_speed_kbit_s[tx_speed_kbit_s > TRANSFER_THRESHOLD_KBIT_S] / tx_speed_div
+
+        rx_total_min, rx_total_max, rx_total_avg = _stat(rx_total_nz)
+        tx_total_min, tx_total_max, tx_total_avg = _stat(tx_total_nz)
+
+        rx_spd_min, rx_spd_max, rx_spd_avg = _stat(rxs_nz)
+        tx_spd_min, tx_spd_max, tx_spd_avg = _stat(txs_nz)
+
+        # ============================================================
+        # Network Traffic Statistics table
+        # ============================================================
 
         col_w = (PAGE_W - 2 * MARGIN - 4 * 8) / 4
 
@@ -1119,7 +1324,6 @@ def add_network_traffic_charts(network_file, history_file, story):
                 for r, v in data_rows
             ]
 
-            # širší stĺpec pre hodnoty, aby sa čísla nelámali na dva riadky
             cw1 = col_w * 0.50
             cw2 = col_w * 0.50
 
@@ -1130,42 +1334,61 @@ def add_network_traffic_charts(network_file, history_file, story):
             )
 
             t.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, 0), header_color),
-                ("ROWBACKGROUNDS",(0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
-                ("GRID",          (0, 0), (-1, -1), 0.4, C_BORDER),
+                ("BACKGROUND",     (0, 0), (-1, 0), header_color),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+                ("GRID",           (0, 0), (-1, -1), 0.4, C_BORDER),
 
-                ("TOPPADDING",    (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                ("TOPPADDING",     (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",    (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",   (0, 0), (-1, -1), 6),
 
-                ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-                ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+                ("FONTNAME",       (0, 0), (-1, 0), "Helvetica-Bold"),
             ]))
 
             return t
 
-        t1 = net_table("RX Total [kB]",
-                       [("Min",     f"{rx_total_min:.2f}"),
-                        ("Max",     f"{rx_total_max:.2f}"),
-                        ("Average", f"{rx_total_avg:.2f}")],
-                       C_PRIMARY)
-        t2 = net_table("RX [kB/s]",
-                       [("Min",     f"{rx_spd_min:.2f}"),
-                        ("Max",     f"{rx_spd_max:.2f}"),
-                        ("Average", f"{rx_spd_avg:.2f}")],
-                       colors.HexColor("#1558A8"))
-        t3 = net_table("TX Total [kB]",
-                       [("Min",     f"{tx_total_min:.2f}"),
-                        ("Max",     f"{tx_total_max:.2f}"),
-                        ("Average", f"{tx_total_avg:.2f}")],
-                       colors.HexColor("#7B2FBE"))
-        t4 = net_table("TX [kB/s]",
-                       [("Min",     f"{tx_spd_min:.2f}"),
-                        ("Max",     f"{tx_spd_max:.2f}"),
-                        ("Average", f"{tx_spd_avg:.2f}")],
-                       colors.HexColor("#5E1A9C"))
+        t1 = net_table(
+            f"RX Total [{rx_total_unit}]",
+            [
+                ("Min",     _fmt_number(rx_total_min)),
+                ("Max",     _fmt_number(rx_total_max)),
+                ("Average", _fmt_number(rx_total_avg)),
+            ],
+            C_PRIMARY
+        )
+
+        t2 = net_table(
+            f"RX [{rx_speed_unit}]",
+            [
+                ("Min",     _fmt_number(rx_spd_min)),
+                ("Max",     _fmt_number(rx_spd_max)),
+                ("Average", _fmt_number(rx_spd_avg)),
+            ],
+            colors.HexColor("#1558A8")
+        )
+
+        t3 = net_table(
+            f"TX Total [{tx_total_unit}]",
+            [
+                ("Min",     _fmt_number(tx_total_min)),
+                ("Max",     _fmt_number(tx_total_max)),
+                ("Average", _fmt_number(tx_total_avg)),
+            ],
+            colors.HexColor("#7B2FBE")
+        )
+
+        t4 = net_table(
+            f"TX [{tx_speed_unit}]",
+            [
+                ("Min",     _fmt_number(tx_spd_min)),
+                ("Max",     _fmt_number(tx_spd_max)),
+                ("Average", _fmt_number(tx_spd_avg)),
+            ],
+            colors.HexColor("#5E1A9C")
+        )
 
         grid = Table(
             [[t1, t2, t3, t4]],
@@ -1173,11 +1396,13 @@ def add_network_traffic_charts(network_file, history_file, story):
             rowHeights=[95],
             hAlign="LEFT"
         )
+
         grid.setStyle(TableStyle([
             ("LEFTPADDING",  (0, 0), (-1, -1), 3),
             ("RIGHTPADDING", (0, 0), (-1, -1), 3),
             ("VALIGN",       (0, 0), (-1, -1), "TOP"),
         ]))
+
         story.append(ColorBand("  Network Traffic Statistics", height=24, font_size=11))
         story.append(Spacer(1, 8))
         story.append(grid)
@@ -1185,8 +1410,10 @@ def add_network_traffic_charts(network_file, history_file, story):
 
     except Exception as e:
         print(f"Error creating network charts: {e}")
-        story.append(Paragraph(f"Error: {e}",
-                               ParagraphStyle("err", fontSize=9, textColor=C_DANGER)))
+        story.append(Paragraph(
+            f"Error: {e}",
+            ParagraphStyle("err", fontSize=9, textColor=C_DANGER)
+        ))
         story.append(Spacer(1, 12))
 
 
