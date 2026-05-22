@@ -6,9 +6,10 @@ set -euo pipefail
 #  Installs all packages needed to run the Locust GUI project.
 # ============================================================
 
+export DEBIAN_FRONTEND=noninteractive
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${PROJECT_DIR}/locust_env"
-REQ_FILE="${PROJECT_DIR}/requirements.txt"
 
 echo "============================================================"
 echo " Preparing Locust tester environment"
@@ -35,6 +36,7 @@ wget
 unzip
 zip
 build-essential
+pkg-config
 xdg-utils
 ca-certificates
 "
@@ -50,12 +52,26 @@ netsniff-ng
 libpcap-dev
 libssl-dev
 openssl
+ethtool
+iperf3
+iftop
+bmon
+htop
+procps
+"
+
+GRAPHIC_PACKAGES="
+tk-dev
+libjpeg-dev
+zlib1g-dev
+fonts-dejavu-core
 "
 
 sudo apt-get install -y \
   ${PYTHON_PACKAGES} \
   ${DEV_PACKAGES} \
-  ${NETWORK_PACKAGES}
+  ${NETWORK_PACKAGES} \
+  ${GRAPHIC_PACKAGES}
 
 echo "▶ Creating Python virtual environment..."
 
@@ -70,105 +86,74 @@ source "${VENV_DIR}/bin/activate"
 echo "▶ Upgrading pip..."
 python -m pip install --upgrade pip setuptools wheel
 
-echo "▶ Creating requirements.txt if missing..."
-
-if [ ! -f "${REQ_FILE}" ]; then
-cat > "${REQ_FILE}" <<EOF
-locust
-requests
-pandas
-matplotlib
-reportlab
-python-dotenv
-customtkinter
-CTkToolTip
-pyhanko
-EOF
-fi
-
 echo "▶ Installing Python dependencies..."
-pip install -r "${REQ_FILE}"
+
+python -m pip install \
+  ctktooltip==0.9 \
+  customtkinter==5.2.2 \
+  gevent==25.9.1 \
+  locust==2.43.4 \
+  matplotlib==3.10.9 \
+  pandas==3.0.2 \
+  pyhanko==0.35.1 \
+  python-dotenv==1.2.2 \
+  reportlab==4.4.10 \
+  requests==2.33.1 \
+  scapy==2.7.0 \
+  pillow==12.2.0 \
+  psutil==7.1.3 \
+  numpy==2.4.4
 
 echo "▶ Creating required project directories..."
+
 mkdir -p "${PROJECT_DIR}/data"
 mkdir -p "${PROJECT_DIR}/report"
 mkdir -p "${PROJECT_DIR}/IP_pool"
 mkdir -p "${PROJECT_DIR}/network"
 mkdir -p "${PROJECT_DIR}/locust_tests"
 
-echo "▶ Creating default config.env if missing..."
-
-if [ ! -f "${PROJECT_DIR}/config.env" ]; then
-cat > "${PROJECT_DIR}/config.env" <<EOF
-# ══════════════════════════════════════════════
-#  LOCUST
-# ══════════════════════════════════════════════
-TARGET_HOST='http://127.0.0.1:8080'
-PROCESSES='-1'
-TEST_TYPE='Load Test'
-STOP_TIMEOUT='30'
-CONNECT_TIMEOUT='3'
-READ_TIMEOUT='10'
-
-# ══════════════════════════════════════════════
-#  HTTP/S REQUEST
-# ══════════════════════════════════════════════
-HTTP_METHOD='GET'
-ENDPOINT_PATH='/'
-REQUEST_BODY='{"message": "hello", "user": "test"}'
-SSL_VERIFY='false'
-REQUEST_FAILURE_THRESHOLD='1'
-
-# ══════════════════════════════════════════════
-#  NETWORK / IP POOL
-# ══════════════════════════════════════════════
-INTERFACE='ens33'
-IP_VERSION='ipv4'
-
-IP_START='192.168.100.100'
-IP_END='192.168.100.120'
-IPV4PREFIX='32'
-
-IP6_START='fd00:100::1000'
-IP6_END='fd00:100::1050'
-IP6_PREFIX='fd00:100::/64'
-IPV6_MODE='range'
-IPV6RPREFIX='64'
-
-# ══════════════════════════════════════════════
-#  REACHABILITY
-# ══════════════════════════════════════════════
-REACH_INTERVAL='5'
-REACH_TIMEOUT='5'
-REACH_SRC_IP=''
-REACH_INTERFACE='ens33'
-REACH_THRESHOLD='5'
-
-# ══════════════════════════════════════════════
-#  TEST STAGES
-#  Duration = duration of one stage, not cumulative time
-# ══════════════════════════════════════════════
-STAGES='[{"duration": 60, "users": 10, "spawn_rate": 5, "wait_mode": "between", "wait_min": 1.0, "wait_max": 3.0}]'
-EOF
-else
-  echo "ℹ config.env already exists — not overwritten"
-fi
-
 echo "▶ Setting executable permissions for shell scripts..."
 find "${PROJECT_DIR}" -maxdepth 2 -name "*.sh" -exec chmod +x {} \;
 
 echo "▶ Verifying Python imports..."
+
 python - <<'PY'
-import tkinter
-import customtkinter
-import pandas
-import matplotlib
-import reportlab
-import dotenv
-import locust
-import requests
+import importlib
+
+modules = {
+    "tkinter": "tkinter",
+    "customtkinter": "customtkinter",
+    "ctktooltip": "ctktooltip",
+    "gevent": "gevent",
+    "locust": "locust",
+    "matplotlib": "matplotlib",
+    "pandas": "pandas",
+    "pyhanko": "pyhanko",
+    "python-dotenv": "dotenv",
+    "reportlab": "reportlab",
+    "requests": "requests",
+    "scapy": "scapy.all",
+    "pillow": "PIL",
+    "psutil": "psutil",
+    "numpy": "numpy",
+}
+
+for package_name, import_name in modules.items():
+    importlib.import_module(import_name)
+    print(f"✓ {package_name}")
+
 print("✓ Python dependencies OK")
 PY
+
+echo "▶ Verifying system tools..."
+
+for tool in ip ping ifconfig tcpdump traceroute nload ethtool iperf3 iftop bmon htop; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "✓ $tool"
+  else
+    echo "⚠ $tool not found"
+  fi
+done
 
 echo "============================================================"
 echo "✓ Tester environment is ready"
